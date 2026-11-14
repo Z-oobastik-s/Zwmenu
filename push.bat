@@ -34,7 +34,12 @@ if "%GHTOKEN%"=="" (
 )
 
 if not exist "%~dp0.git\" "%GIT%" init
-"%GIT%" checkout -B main
+"%GIT%" rev-parse --verify main >nul 2>&1
+if errorlevel 1 (
+  "%GIT%" checkout -B main
+) else (
+  "%GIT%" checkout main
+)
 "%GIT%" remote get-url origin >nul 2>&1
 if errorlevel 1 (
   "%GIT%" remote add origin https://github.com/Z-oobastik-s/Zwmenu.git
