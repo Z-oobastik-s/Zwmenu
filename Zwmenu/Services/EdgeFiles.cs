@@ -99,9 +99,20 @@ sealed class EdgeFiles : IDisposable
         AddClipboardFormatListener(_source.Handle);
     }
 
+    public bool Live
+    {
+        get
+        {
+            if (_incoming != null || Volatile.Read(ref _sending) != 0)
+                return true;
+            lock (_carryGate)
+                return _carry != null && Environment.TickCount64 <= _carryUntil;
+        }
+    }
+
     public void Stop()
     {
-        bool live = _incoming != null || Volatile.Read(ref _sending) != 0;
+        bool live = Live;
         try { _alive?.Cancel(); } catch { /* уже остановлен */ }
         _alive = null;
         Interlocked.Increment(ref _diskEpoch);

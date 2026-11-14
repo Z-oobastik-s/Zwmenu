@@ -141,6 +141,7 @@ public sealed class EdgeShareService : IDisposable
 
     public bool Running => _running;
     public bool Linked => _link != null;
+    public bool Transferring => _files.Live;
 
     public bool TrySend(byte[] body)
     {

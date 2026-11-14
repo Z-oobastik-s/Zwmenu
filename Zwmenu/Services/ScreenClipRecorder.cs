@@ -22,6 +22,16 @@ public sealed class ScreenClipRecorder
 
     public bool IsActive => Volatile.Read(ref _state) != 0;
 
+    static int _any;
+
+    public static bool AnyActive => Volatile.Read(ref _any) != 0;
+
+    void SetState(int value)
+    {
+        Volatile.Write(ref _state, value);
+        Volatile.Write(ref _any, value);
+    }
+
     /// <summary>0 — покой, 1 — готовится, 2 — пишется.</summary>
     public event Action<int>? StateChanged;
 
@@ -38,7 +48,7 @@ public sealed class ScreenClipRecorder
         _audio = audio;
         _audioNote = "";
         int token = Interlocked.Increment(ref _token);
-        Volatile.Write(ref _state, 1);
+        SetState(1);
         _ = StartAsync(token);
     }
 
@@ -139,7 +149,7 @@ public sealed class ScreenClipRecorder
         }
         finally
         {
-            Volatile.Write(ref _state, 0);
+            SetState(0);
             Notify(0);
         }
     }
@@ -214,7 +224,7 @@ public sealed class ScreenClipRecorder
             _proc = proc;
         }
 
-        Volatile.Write(ref _state, 2);
+        SetState(2);
         Notify(2);
         var stderr = Pump(proc);
         try

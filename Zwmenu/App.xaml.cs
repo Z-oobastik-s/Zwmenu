@@ -104,7 +104,11 @@ public partial class App: Application
         };
         EdgeShareService.Shared.Start();
         StayAwake.Start();
-        UpdateWindow.ExitForUpdate = () => ExitApp();
+        UpdateWindow.ExitForUpdate = () =>
+        {
+            try { _settings?.CloseForExit(); } catch { /* окно настроек уже закрыто */ }
+            ExitApp(fromWindows: true);
+        };
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
         updateTimer.Tick += (_, _) =>
         {
@@ -196,6 +200,7 @@ public partial class App: Application
         }
 
         _exiting = true;
+        AppUpdate.Stop();
         EdgeShareService.Shared.Dispose();
         _workoutReminder?.Dispose();
         _launcher?.Dispose();

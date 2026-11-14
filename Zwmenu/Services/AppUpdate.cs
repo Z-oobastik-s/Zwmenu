@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Zwmenu.Overlay;
 
@@ -19,6 +21,9 @@ public static class AppUpdate
     const string LatestUrl = "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/latest";
 
     static readonly HttpClient Http = CreateClient();
+    static int _checking;
+    static int _manual;
+    static int _stopped;
 
     public static Version Current
     {
@@ -29,8 +34,17 @@ public static class AppUpdate
         }
     }
 
+    public static void Stop() => Volatile.Write(ref _stopped, 1);
+
     public static void CheckSoon(bool manual)
     {
+        if (Volatile.Read(ref _stopped) != 0)
+            return;
+        if (manual)
+            Volatile.Write(ref _manual, 1);
+        if (Interlocked.CompareExchange(ref _checking, 1, 0) != 0)
+            return;
+
         _ = Task.Run(async () =>
         {
             UpdateOffer? offer = null;
@@ -43,18 +57,28 @@ public static class AppUpdate
             {
                 failed = true;
             }
+            finally
+            {
+                Interlocked.Exchange(ref _checking, 0);
+            }
 
             var found = offer;
             var broken = failed;
-            Application.Current?.Dispatcher.BeginInvoke(() =>
+            var asManual = Interlocked.Exchange(ref _manual, 0) == 1;
+            var app = Application.Current;
+            if (Volatile.Read(ref _stopped) != 0 || app == null || app.Dispatcher.HasShutdownStarted)
+                return;
+            _ = app.Dispatcher.BeginInvoke(() =>
             {
-                if (found != null && ShouldOffer(found.Version, Current, Skipped(), manual))
+                if (Volatile.Read(ref _stopped) != 0)
+                    return;
+                if (found != null && ShouldOffer(found.Version, Current, Skipped(), asManual))
                 {
-                    UpdateWindow.ShowOffer(found);
+                    UpdateWindow.ShowOffer(found, asManual);
                     return;
                 }
 
-                if (!manual)
+                if (!asManual || UpdateWindow.IsBusy)
                     return;
 
                 UpdateWindow.ShowNote(broken
@@ -62,6 +86,45 @@ public static class AppUpdate
                     : "Уже стоит последняя версия.");
             });
         });
+    }
+
+    public static string? BusyWork()
+    {
+        try
+        {
+            if (EdgeShareService.Shared.Transferring)
+                return "Идёт передача файлов. Дождись её и нажми «Поставить» ещё раз.";
+        }
+        catch { /* связь уже закрыта */ }
+
+        try
+        {
+            if (ScreenClipRecorder.AnyActive)
+                return "Идёт запись экрана. Дождись её и нажми «Поставить» ещё раз.";
+        }
+        catch { /* запись уже кончилась */ }
+
+        try
+        {
+            if (VoiceRecService.Shared.State is VoiceRecState.Recording or VoiceRecState.Paused or VoiceRecState.Saving)
+                return "Идёт запись голоса. Дождись её и нажми «Поставить» ещё раз.";
+        }
+        catch { /* запись уже кончилась */ }
+
+        return null;
+    }
+
+    public static bool IsTrusted(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var path = uri.AbsolutePath;
+        return path.StartsWith("/Z-oobastik-s/Zwmenu/releases/download/", StringComparison.OrdinalIgnoreCase)
+            && path.EndsWith("/" + AssetName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool ShouldOffer(Version latest, Version current, Version? skipped, bool manual)
@@ -112,7 +175,7 @@ public static class AppUpdate
                 if (!string.Equals(name, AssetName, StringComparison.OrdinalIgnoreCase))
                     continue;
                 var url = asset.TryGetProperty("browser_download_url", out var urlNode) ? urlNode.GetString() : null;
-                if (string.IsNullOrWhiteSpace(url))
+                if (string.IsNullOrWhiteSpace(url) || !IsTrusted(url))
                     return false;
                 long size = 0;
                 if (asset.TryGetProperty("size", out var sizeNode) && sizeNode.TryGetInt64(out var parsed))
@@ -131,56 +194,60 @@ public static class AppUpdate
 
     public static async Task DownloadAsync(UpdateOffer offer, IProgress<(long Got, long Total)> progress, CancellationToken cancel)
     {
-        var partial = SetupPath(offer.Version) + ".part";
+        if (!IsTrusted(offer.Url))
+            throw new InvalidDataException("url");
+
         var finalPath = SetupPath(offer.Version);
-        try
+        if (Ready(finalPath, offer.Size))
         {
-            using var response = await Http.GetAsync(offer.Url, HttpCompletionOption.ResponseHeadersRead, cancel).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var total = response.Content.Headers.ContentLength ?? offer.Size;
-            await using var input = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
-            await using (var output = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
-            {
-                var buffer = new byte[81920];
-                long got = 0;
-                int read;
-                while ((read = await input.ReadAsync(buffer, cancel).ConfigureAwait(false)) > 0)
-                {
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancel).ConfigureAwait(false);
-                    got += read;
-                    progress.Report((got, total));
-                }
+            progress.Report((Math.Max(offer.Size, 1), Math.Max(offer.Size, 1)));
+            return;
+        }
 
-                if (offer.Size > 0 && got != offer.Size)
-                    throw new InvalidDataException("size");
-                if (got < 1_000_000)
-                    throw new InvalidDataException("small");
+        var partial = finalPath + ".part";
+        Exception? last = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                await DownloadOnce(offer, partial, finalPath, progress, cancel).ConfigureAwait(false);
+                return;
+            }
+            catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+            {
+                last = new IOException("stall");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (InvalidDataException ex)
+            {
+                last = ex;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
             }
 
-            await using (var check = File.OpenRead(partial))
-            {
-                if (check.ReadByte() != 'M' || check.ReadByte() != 'Z')
-                    throw new InvalidDataException("exe");
-            }
+            await Task.Delay(700, cancel).ConfigureAwait(false);
+        }
 
-            if (File.Exists(finalPath))
-                File.Delete(finalPath);
-            File.Move(partial, finalPath);
-        }
-        catch
-        {
-            try { if (File.Exists(partial)) File.Delete(partial); } catch { /* хвост закачки не мешает следующей */ }
-            throw;
-        }
+        throw last ?? new IOException("download");
     }
 
     public static void StartInstaller(Version version)
     {
+        var path = SetupPath(version);
+        if (path.Contains('"'))
+            throw new InvalidOperationException("path");
         Process.Start(new ProcessStartInfo
         {
-            FileName = SetupPath(version),
-            Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
-            UseShellExecute = true
+            FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            Arguments = "/c ping 127.0.0.1 -n 4 >nul & start \"\" \"" + path + "\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
         });
     }
 
@@ -218,12 +285,132 @@ public static class AppUpdate
             throw new InvalidOperationException("ручная проверка не показала отложенную версию");
 
         const string json = """
-            {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://example.invalid/Zwmenu-Setup.exe","size":123456789}]}
+            {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Setup.exe","size":123456789}]}
             """;
         if (!TryParseLatest(json, out var offer) || offer.Version != new Version(9, 9, 9) || offer.Size != 123456789)
             throw new InvalidOperationException("разбор релиза");
         if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"readme.txt","browser_download_url":"https://example.invalid/readme.txt","size":10}]}""", out _))
             throw new InvalidOperationException("релиз без установщика принят");
+        if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://evil.example/Zwmenu-Setup.exe","size":123456789}]}""", out _))
+            throw new InvalidOperationException("чужой адрес принят");
+        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.37/Zwmenu-Setup.exe"))
+            throw new InvalidOperationException("свой адрес отвергнут");
+        if (IsTrusted("http://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.37/Zwmenu-Setup.exe"))
+            throw new InvalidOperationException("http принят");
+    }
+
+    static async Task DownloadOnce(UpdateOffer offer, string partial, string finalPath, IProgress<(long Got, long Total)> progress, CancellationToken cancel)
+    {
+        long have = 0;
+        if (File.Exists(partial))
+            have = new FileInfo(partial).Length;
+        if (offer.Size > 0 && have > offer.Size)
+        {
+            File.Delete(partial);
+            have = 0;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, offer.Url);
+        if (have > 0)
+            request.Headers.Range = new RangeHeaderValue(have, null);
+        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+        {
+            TryDelete(partial);
+            throw new IOException("range");
+        }
+
+        response.EnsureSuccessStatusCode();
+        var append = response.StatusCode == HttpStatusCode.PartialContent && have > 0;
+        if (!append)
+            have = 0;
+
+        var total = offer.Size > 0
+            ? offer.Size
+            : have + (response.Content.Headers.ContentLength ?? 0);
+        await using var input = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
+        var mode = append ? FileMode.Append : FileMode.Create;
+        long got = have;
+        long lastReport = 0;
+        await using (var output = new FileStream(partial, mode, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
+        {
+            var buffer = new byte[81920];
+            while (true)
+            {
+                int read;
+                using (var stall = new CancellationTokenSource(TimeSpan.FromSeconds(40)))
+                using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancel, stall.Token))
+                    read = await input.ReadAsync(buffer, linked.Token).ConfigureAwait(false);
+                if (read == 0)
+                    break;
+                await output.WriteAsync(buffer.AsMemory(0, read), cancel).ConfigureAwait(false);
+                got += read;
+                var now = Environment.TickCount64;
+                if (total > 0 && (got == total || now - lastReport >= 200))
+                {
+                    lastReport = now;
+                    progress.Report((got, total));
+                }
+                else if (total <= 0 && now - lastReport >= 200)
+                {
+                    lastReport = now;
+                    progress.Report((got, 0));
+                }
+            }
+        }
+
+        if (total > 0)
+            progress.Report((got, total));
+        try
+        {
+            Finish(partial, finalPath, offer.Size);
+        }
+        catch (InvalidDataException)
+        {
+            TryDelete(partial);
+            throw;
+        }
+    }
+
+    static void Finish(string partial, string finalPath, long expected)
+    {
+        using (var check = File.OpenRead(partial))
+        {
+            if (check.Length < 1_000_000)
+                throw new InvalidDataException("small");
+            if (expected > 0 && check.Length != expected)
+                throw new InvalidDataException("size");
+            if (check.ReadByte() != 'M' || check.ReadByte() != 'Z')
+                throw new InvalidDataException("exe");
+        }
+
+        if (File.Exists(finalPath))
+            File.Delete(finalPath);
+        File.Move(partial, finalPath);
+    }
+
+    static bool Ready(string path, long expected)
+    {
+        try
+        {
+            if (!File.Exists(path))
+                return false;
+            using var check = File.OpenRead(path);
+            if (check.Length < 1_000_000)
+                return false;
+            if (expected > 0 && check.Length != expected)
+                return false;
+            return check.ReadByte() == 'M' && check.ReadByte() == 'Z';
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* файл ещё занят */ }
     }
 
     static async Task<UpdateOffer?> LookAsync()

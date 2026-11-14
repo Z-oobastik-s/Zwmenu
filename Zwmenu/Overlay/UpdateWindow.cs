@@ -12,6 +12,8 @@ public sealed class UpdateWindow : Window
 
     static UpdateWindow? _open;
 
+    public static bool IsBusy => _open != null && _open._busy;
+
     readonly TextBlock _text;
     readonly System.Windows.Controls.Border _track;
     readonly System.Windows.Controls.Border _fill;
@@ -19,6 +21,7 @@ public sealed class UpdateWindow : Window
     UpdateOffer? _offer;
     CancellationTokenSource? _cancel;
     bool _busy;
+    bool _alive = true;
 
     UpdateWindow()
     {
@@ -75,28 +78,37 @@ public sealed class UpdateWindow : Window
         ContentRendered += (_, _) => Place();
         Closed += (_, _) =>
         {
+            _alive = false;
             _cancel?.Cancel();
             if (ReferenceEquals(_open, this))
                 _open = null;
         };
     }
 
-    public static void ShowOffer(UpdateOffer offer)
+    public static void ShowOffer(UpdateOffer offer, bool stealFocus)
     {
         var window = Ensure();
+        if (window._busy)
+            return;
         window.BindOffer(offer);
+        window.ShowActivated = stealFocus && !GameFocus.IsPlaying();
         window.Show();
         window.Place();
-        window.Activate();
+        if (stealFocus && !GameFocus.IsPlaying())
+            window.Activate();
     }
 
     public static void ShowNote(string text)
     {
         var window = Ensure();
+        if (window._busy)
+            return;
         window.BindNote(text);
+        window.ShowActivated = !GameFocus.IsPlaying();
         window.Show();
         window.Place();
-        window.Activate();
+        if (!GameFocus.IsPlaying())
+            window.Activate();
     }
 
     void BindOffer(UpdateOffer offer)
@@ -126,8 +138,15 @@ public sealed class UpdateWindow : Window
 
     async void Install()
     {
-        if (_busy || _offer == null)
+        if (_busy || _offer == null || !_alive)
             return;
+
+        var waiting = AppUpdate.BusyWork();
+        if (waiting != null)
+        {
+            _text.Text = waiting;
+            return;
+        }
 
         var offer = _offer;
         _busy = true;
@@ -139,9 +158,11 @@ public sealed class UpdateWindow : Window
         {
             var progress = new Progress<(long Got, long Total)>(pair =>
             {
+                if (!_alive)
+                    return;
                 if (pair.Total > 0)
                 {
-                    _fill.Width = 352.0 * pair.Got / pair.Total;
+                    _fill.Width = 352.0 * Math.Min(pair.Got, pair.Total) / pair.Total;
                     _text.Text = "Скачиваю " + Megabytes(pair.Got) + " из " + Megabytes(pair.Total) + " МБ";
                 }
                 else
@@ -150,6 +171,15 @@ public sealed class UpdateWindow : Window
                 }
             });
             await AppUpdate.DownloadAsync(offer, progress, _cancel.Token);
+            if (!_alive)
+                return;
+            waiting = AppUpdate.BusyWork();
+            if (waiting != null)
+            {
+                Hold(waiting);
+                return;
+            }
+
             _text.Text = "Ставлю. Программа сейчас закроется и откроется снова.";
             AppUpdate.StartInstaller(offer.Version);
             if (ExitForUpdate != null)
@@ -159,20 +189,29 @@ public sealed class UpdateWindow : Window
         }
         catch (OperationCanceledException)
         {
+            if (!_alive)
+                return;
             _busy = false;
             _buttons.IsEnabled = true;
             BindOffer(offer);
         }
         catch
         {
-            _busy = false;
-            _buttons.IsEnabled = true;
-            _track.Visibility = Visibility.Collapsed;
-            _text.Text = "Не скачалось. Проверь интернет и нажми «Поставить» ещё раз.";
-            _buttons.Children.Clear();
-            _buttons.Children.Add(TemplateTheme.Pill("Поставить", Install, accent: true));
-            _buttons.Children.Add(TemplateTheme.Pill("Позже", Later));
+            if (!_alive)
+                return;
+            Hold("Не скачалось. Проверь интернет и нажми «Поставить» ещё раз.");
         }
+    }
+
+    void Hold(string text)
+    {
+        _busy = false;
+        _buttons.IsEnabled = true;
+        _track.Visibility = Visibility.Collapsed;
+        _text.Text = text;
+        _buttons.Children.Clear();
+        _buttons.Children.Add(TemplateTheme.Pill("Поставить", Install, accent: true));
+        _buttons.Children.Add(TemplateTheme.Pill("Позже", Later));
     }
 
     void Later()
@@ -184,17 +223,19 @@ public sealed class UpdateWindow : Window
 
     void Place()
     {
-        var area = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea
-            ?? System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
-        Left = area.Right - ActualWidth - 16;
-        Top = area.Bottom - ActualHeight - 16;
+        var point = System.Windows.Forms.Cursor.Position;
+        var area = System.Windows.Forms.Screen.FromPoint(point).WorkingArea;
+        var width = ActualWidth > 1 ? ActualWidth : Width;
+        var height = ActualHeight > 1 ? ActualHeight : 170;
+        Left = Math.Max(area.Left + 8, area.Right - width - 16);
+        Top = Math.Max(area.Top + 8, area.Bottom - height - 16);
     }
 
     static string Megabytes(long bytes) => ((bytes + 524288) / 1048576).ToString();
 
     static UpdateWindow Ensure()
     {
-        if (_open != null)
+        if (_open != null && _open._alive)
             return _open;
         _open = new UpdateWindow();
         return _open;
