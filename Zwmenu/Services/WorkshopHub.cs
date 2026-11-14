@@ -29,6 +29,7 @@ public static class WorkshopHub
     static int _got;
     static MemoryStream? _print;
     static string _printName = "file";
+    static TaskCompletionSource<string>? _printWait;
 
     public static event Action<string>? Noted;
 
@@ -66,41 +67,67 @@ public static class WorkshopHub
                 FinishPrint();
                 break;
             case Note:
-                Tell(Encoding.UTF8.GetString(body, 2, body.Length - 2));
+                NoteFromPeer(Encoding.UTF8.GetString(body, 2, body.Length - 2));
                 break;
         }
     }
 
-    public static Task<string> SendFileToPrint(string path)
+    public static async Task<string> SendFileToPrint(string path)
     {
-        return Task.Run(() =>
+        if (string.IsNullOrWhiteSpace(path))
+            return "Файла нет.";
+        if (Directory.Exists(path))
+            return "Это папка. На печать уходит файл.";
+        if (!File.Exists(path))
+            return "Файла нет.";
+        var info = new FileInfo(path);
+        if (info.Length <= 0)
+            return "Файл пустой.";
+        if (info.Length > 25_000_000)
+            return "Файл больше 25 МБ. Для печати через связь это много.";
+        if (!EdgeShareService.Shared.Linked)
+            return "Второй компьютер не на связи. Zwmenu должен быть открыт на обоих в одной сети.";
+
+        var wait = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (Gate)
+            _printWait = wait;
+        try
         {
-            if (!File.Exists(path))
-                return "Файла нет.";
-            var info = new FileInfo(path);
-            if (info.Length <= 0)
-                return "Файл пустой.";
-            if (info.Length > 25_000_000)
-                return "Файл больше 25 МБ. Для печати через связь это много.";
-            if (!EdgeShareService.Shared.Linked)
-                return "Второй не на связи.";
-
-            byte[] data = File.ReadAllBytes(path);
-            if (!Send(PrintBegin, Encoding.UTF8.GetBytes(Path.GetFileName(path))))
-                return "Связь оборвалась.";
-            for (int i = 0; i < data.Length; i += Chunk)
+            string? broken = await Task.Run(() => SendPrintBytes(path));
+            if (broken != null)
+                return broken;
+            var done = await Task.WhenAny(wait.Task, Task.Delay(40_000));
+            if (done != wait.Task)
+                return "Файл ушёл, но второй компьютер не ответил. Проверь, что Zwmenu там открыт и принтер включён.";
+            return await wait.Task;
+        }
+        finally
+        {
+            lock (Gate)
             {
-                int n = Math.Min(Chunk, data.Length - i);
-                var rest = new byte[n];
-                Buffer.BlockCopy(data, i, rest, 0, n);
-                if (!Send(PrintPart, rest))
-                    return "Связь оборвалась на середине файла.";
+                if (ReferenceEquals(_printWait, wait))
+                    _printWait = null;
             }
+        }
+    }
 
-            if (!Send(PrintEnd, ReadOnlySpan<byte>.Empty))
-                return "Не удалось закончить отправку.";
-            return "Файл ушёл на второй компьютер. Печать начнётся там, если принтер у него есть.";
-        });
+    static string? SendPrintBytes(string path)
+    {
+        byte[] data = File.ReadAllBytes(path);
+        if (!Send(PrintBegin, Encoding.UTF8.GetBytes(Path.GetFileName(path))))
+            return "Связь оборвалась.";
+        for (int i = 0; i < data.Length; i += Chunk)
+        {
+            int n = Math.Min(Chunk, data.Length - i);
+            var rest = new byte[n];
+            Buffer.BlockCopy(data, i, rest, 0, n);
+            if (!Send(PrintPart, rest))
+                return "Связь оборвалась на середине файла.";
+        }
+
+        if (!Send(PrintEnd, ReadOnlySpan<byte>.Empty))
+            return "Не удалось закончить отправку.";
+        return null;
     }
 
     static void CaptureAndSend()
@@ -265,25 +292,376 @@ public static class WorkshopHub
 
     static void PrintLocal(string name, byte[] data)
     {
+        string path = "";
         try
         {
+            string? printer = DefaultPrinter();
+            if (printer == null)
+            {
+                Reply("Печать. На этом компьютере нет принтера.");
+                return;
+            }
+
             string dir = Path.Combine(Path.GetTempPath(), "Zwmenu");
             Directory.CreateDirectory(dir);
-            string path = Path.Combine(dir, name);
+            path = Path.Combine(dir, name);
             File.WriteAllBytes(path, data);
-            var start = new ProcessStartInfo(path)
+            string ext = Path.GetExtension(path);
+            bool own = false;
+            if (IsImage(ext))
             {
-                Verb = "print",
-                UseShellExecute = true,
-                CreateNoWindow = true
-            };
-            Process.Start(start);
-            Reply("Печать запущена: " + name);
+                try
+                {
+                    RunSta(() => PrintImage(path, printer, name));
+                    own = true;
+                }
+                catch
+                {
+                    RunSta(() => PrintShell(path, printer));
+                }
+            }
+            else if (IsPlainText(ext) && LooksLikeText(data))
+            {
+                RunSta(() => PrintText(data, printer, name));
+                own = true;
+            }
+            else if (ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+                own = PrintPdfOrShell(path, printer, name);
+            else
+                RunSta(() => PrintShell(path, printer));
+            Reply("Печать. Запустил на «" + printer + "»: " + name);
+            if (own)
+            {
+                try { if (File.Exists(path)) File.Delete(path); }
+                catch { /* файл ещё занят */ }
+            }
         }
         catch (Exception ex)
         {
-            Reply("Печать не запустилась: " + ex.Message);
+            Reply("Печать. " + CleanPrintError(ex.Message));
         }
+    }
+
+    static string? DefaultPrinter()
+    {
+        try
+        {
+            var settings = new System.Drawing.Printing.PrinterSettings();
+            if (!settings.IsValid)
+                return null;
+            string name = settings.PrinterName ?? "";
+            return name.Length == 0 ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static void RunSta(Action work)
+    {
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try { work(); }
+            catch (Exception ex) { error = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        thread.Join();
+        if (error != null)
+            throw error;
+    }
+
+    static void PrintImage(string path, string printer, string title)
+    {
+        using var image = System.Drawing.Image.FromFile(path);
+        using var doc = NewPrint(printer, title);
+        doc.PrintPage += (_, e) =>
+        {
+            if (e.Graphics == null)
+                return;
+            var bounds = e.MarginBounds;
+            float scale = Math.Min(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height);
+            float w = image.Width * scale;
+            float h = image.Height * scale;
+            float x = bounds.Left + (bounds.Width - w) / 2f;
+            float y = bounds.Top + (bounds.Height - h) / 2f;
+            e.Graphics.DrawImage(image, x, y, w, h);
+            e.HasMorePages = false;
+        };
+        doc.Print();
+    }
+
+    static void PrintText(byte[] data, string printer, string title)
+    {
+        string text = DecodeText(data);
+        var lines = WrapText(text);
+        int index = 0;
+        using var font = new System.Drawing.Font("Segoe UI", 11f);
+        using var doc = NewPrint(printer, title);
+        doc.PrintPage += (_, e) =>
+        {
+            if (e.Graphics == null)
+                return;
+            float y = e.MarginBounds.Top;
+            float limit = e.MarginBounds.Bottom;
+            while (index < lines.Count && y + font.Height <= limit)
+            {
+                e.Graphics.DrawString(lines[index], font, System.Drawing.Brushes.Black, e.MarginBounds.Left, y);
+                y += font.Height + 2;
+                index++;
+            }
+
+            e.HasMorePages = index < lines.Count && index < 2400;
+        };
+        doc.Print();
+    }
+
+    static List<string> WrapText(string text)
+    {
+        var lines = new List<string>();
+        string flat = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        foreach (string raw in flat.Split('\n'))
+        {
+            if (raw.Length <= 110)
+            {
+                lines.Add(raw);
+                continue;
+            }
+
+            for (int i = 0; i < raw.Length; i += 110)
+                lines.Add(raw.Substring(i, Math.Min(110, raw.Length - i)));
+        }
+
+        if (lines.Count == 0)
+            lines.Add("");
+        return lines;
+    }
+
+    static bool PrintPdfOrShell(string path, string printer, string title)
+    {
+        List<System.Drawing.Bitmap>? pages = null;
+        try
+        {
+            pages = RenderPdf(path).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            pages = null;
+        }
+
+        if (pages == null || pages.Count == 0)
+        {
+            RunSta(() => PrintShell(path, printer));
+            return false;
+        }
+
+        try
+        {
+            RunSta(() => PrintBitmaps(pages, printer, title));
+            return true;
+        }
+        finally
+        {
+            foreach (var page in pages)
+                page.Dispose();
+        }
+    }
+
+    static async Task<List<System.Drawing.Bitmap>> RenderPdf(string path)
+    {
+        var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+        var doc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file);
+        if (doc.PageCount == 0 || doc.PageCount > 30)
+            throw new InvalidOperationException("pdf");
+        var pages = new List<System.Drawing.Bitmap>();
+        for (uint i = 0; i < doc.PageCount; i++)
+        {
+            using var page = doc.GetPage(i);
+            using var ras = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            var opt = new Windows.Data.Pdf.PdfPageRenderOptions
+            {
+                DestinationWidth = (uint)Math.Clamp(page.Size.Width * 140.0 / 96.0, 200, 1600)
+            };
+            await page.RenderToStreamAsync(ras, opt);
+            ras.Seek(0);
+            uint size = (uint)Math.Min(ras.Size, int.MaxValue);
+            var bytes = new byte[size];
+            var reader = new Windows.Storage.Streams.DataReader(ras.GetInputStreamAt(0));
+            await reader.LoadAsync(size);
+            reader.ReadBytes(bytes);
+            reader.DetachStream();
+            using var copy = new MemoryStream(bytes);
+            using var raw = new System.Drawing.Bitmap(copy);
+            pages.Add(new System.Drawing.Bitmap(raw));
+        }
+
+        return pages;
+    }
+
+    static void PrintBitmaps(IReadOnlyList<System.Drawing.Bitmap> pages, string printer, string title)
+    {
+        int index = 0;
+        using var doc = NewPrint(printer, title);
+        doc.PrintPage += (_, e) =>
+        {
+            if (e.Graphics == null || index >= pages.Count)
+                return;
+            var image = pages[index];
+            var bounds = e.MarginBounds;
+            float scale = Math.Min(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height);
+            float w = image.Width * scale;
+            float h = image.Height * scale;
+            float x = bounds.Left + (bounds.Width - w) / 2f;
+            float y = bounds.Top + (bounds.Height - h) / 2f;
+            e.Graphics.DrawImage(image, x, y, w, h);
+            index++;
+            e.HasMorePages = index < pages.Count;
+        };
+        doc.Print();
+    }
+
+    static void PrintShell(string path, string printer)
+    {
+        if (!TryPrintVerb(path, out string verb))
+            throw new InvalidOperationException("Этот тип файла на том компьютере не печатается.");
+        var info = new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true,
+            Verb = verb,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+        if (verb == "printto")
+            info.Arguments = "\"" + printer.Replace("\"", "") + "\"";
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("Печать не запустилась.");
+    }
+
+    static System.Drawing.Printing.PrintDocument NewPrint(string printer, string title)
+    {
+        var doc = new System.Drawing.Printing.PrintDocument();
+        doc.PrinterSettings.PrinterName = printer;
+        doc.DocumentName = title;
+        doc.PrintController = new System.Drawing.Printing.StandardPrintController();
+        if (!doc.PrinterSettings.IsValid)
+        {
+            doc.Dispose();
+            throw new InvalidOperationException("Принтер недоступен: " + printer);
+        }
+
+        return doc;
+    }
+
+    static bool TryPrintVerb(string path, out string verb)
+    {
+        verb = "";
+        string ext = Path.GetExtension(path);
+        if (string.IsNullOrEmpty(ext))
+            return false;
+        var ids = new List<string>();
+        string? user = RegGet(Microsoft.Win32.Registry.CurrentUser,
+            @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" + ext + @"\UserChoice", "ProgId");
+        if (!string.IsNullOrEmpty(user))
+            ids.Add(user);
+        string? cls = RegGet(Microsoft.Win32.Registry.ClassesRoot, ext, "");
+        if (!string.IsNullOrEmpty(cls))
+            ids.Add(cls);
+        ids.Add(@"SystemFileAssociations\" + ext);
+        foreach (string id in ids)
+        {
+            if (VerbCommand(id, "printto"))
+            {
+                verb = "printto";
+                return true;
+            }
+        }
+
+        foreach (string id in ids)
+        {
+            if (VerbCommand(id, "print"))
+            {
+                verb = "print";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool VerbCommand(string progId, string verb)
+    {
+        string sub = progId + @"\shell\" + verb + @"\command";
+        if (RegGet(Microsoft.Win32.Registry.ClassesRoot, sub, "") is { Length: > 0 })
+            return true;
+        return RegGet(Microsoft.Win32.Registry.CurrentUser, @"Software\Classes\" + sub, "") is { Length: > 0 };
+    }
+
+    static string? RegGet(Microsoft.Win32.RegistryKey root, string sub, string name)
+    {
+        try
+        {
+            using var key = root.OpenSubKey(sub);
+            return key?.GetValue(name) as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static bool IsImage(string ext)
+    {
+        return ext.Equals(".png", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".gif", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tif", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsPlainText(string ext)
+    {
+        return ext.Equals(".txt", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".log", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".csv", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".ini", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool LooksLikeText(byte[] data)
+    {
+        int n = Math.Min(data.Length, 4096);
+        int nul = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (data[i] == 0)
+                nul++;
+        }
+
+        return nul < 2;
+    }
+
+    static string DecodeText(byte[] data)
+    {
+        if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+            return Encoding.UTF8.GetString(data, 3, data.Length - 3);
+        if (data.Length >= 2 && data[0] == 0xFF && data[1] == 0xFE)
+            return Encoding.Unicode.GetString(data, 2, data.Length - 2);
+        if (data.Length >= 2 && data[0] == 0xFE && data[1] == 0xFF)
+            return Encoding.BigEndianUnicode.GetString(data, 2, data.Length - 2);
+        return Encoding.UTF8.GetString(data);
+    }
+
+    static string CleanPrintError(string message)
+    {
+        string text = (message ?? "").Trim();
+        if (text.Length == 0)
+            return "Печать не запустилась.";
+        return text.Length > 180 ? text[..180] : text;
     }
 
     static string SafeName(string name)
@@ -296,11 +674,25 @@ public static class WorkshopHub
         return file.Length > 80 ? file[..80] : file;
     }
 
+    static void NoteFromPeer(string text)
+    {
+        if (text.StartsWith("Печать.", StringComparison.Ordinal))
+        {
+            TaskCompletionSource<string>? wait;
+            lock (Gate)
+                wait = _printWait;
+            wait?.TrySetResult(text);
+        }
+
+        Tell(text);
+    }
+
     static void Reply(string text)
     {
         try { Send(Note, Encoding.UTF8.GetBytes(text)); }
         catch { /* ответ не обязателен */ }
         Tell(text);
+        PrintPeer.Show(text);
     }
 
     static void Tell(string text)

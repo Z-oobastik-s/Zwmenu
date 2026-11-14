@@ -669,26 +669,13 @@
                     <StackPanel x:Name="BehLook" Visibility="Collapsed">
                     <TextBlock Text="Вид круга" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Пять дорогих обликов диска и орбиты. Меняется сразу — открой колесо колёсиком и смотри."/>
-                    <UniformGrid Columns="5" Margin="0,0,0,8" HorizontalAlignment="Left" Width="520">
-                        <Button x:Name="RingLook0" Content="Классика" Tag="0" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
-                        <Button x:Name="RingLook1" Content="Обсидиан" Tag="1" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
-                        <Button x:Name="RingLook2" Content="Шампань" Tag="2" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
-                        <Button x:Name="RingLook3" Content="Лёд" Tag="3" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
-                        <Button x:Name="RingLook4" Content="Карбон" Tag="4" Margin="0,0,0,0" Padding="8,10" Click="OnRingLook"/>
-                    </UniformGrid>
+                               Text="Двенадцать видов круга. Иконки садятся в цвет темы. Открой колесо колёсиком."/>
+                    <UniformGrid x:Name="RingLookGrid" Columns="5" Margin="0,0,0,8" HorizontalAlignment="Left" Width="540"/>
                     <TextBlock x:Name="RingLookHint" Margin="0,0,0,10" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Матовый графит, как сейчас. Чистый и спокойный."/>
-                    <Border Background="#FF1A1A1E" CornerRadius="14" Padding="10" HorizontalAlignment="Left" Width="280" Height="180">
-                        <Canvas x:Name="RingLookPreview" Width="260" Height="160" ClipToBounds="True"/>
+                               Text="Тёмный графит, кремовая кромка и мелкая шкала."/>
+                    <Border Background="#FF1A1A1E" CornerRadius="14" Padding="8" HorizontalAlignment="Left" Width="320" Height="236">
+                        <Canvas x:Name="RingLookPreview" Width="304" Height="220" ClipToBounds="True"/>
                     </Border>
-
-                    <TextBlock Text="Рамка-орнамент" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
-                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Опционально: PNG поверх диска. Пока рамка включена, вид выше почти не виден. Свои PNG без фона — в Assets\Skins."/>
-                    <ComboBox x:Name="RingSkinCombo" MinWidth="280" MaxWidth="480"
-                              HorizontalAlignment="Left"
-                              SelectionChanged="OnRingSkinSelectionChanged"/>
 
                     <TextBlock Text="Перевод буфера" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"

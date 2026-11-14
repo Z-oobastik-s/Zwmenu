@@ -807,18 +807,34 @@ public sealed class LauncherService: IDisposable
                 return;
             }
 
-            System.Drawing.Bitmap? bmp = null;
-            try
+            _ = Task.Run(() =>
             {
-                bmp = ScreenCapture.CaptureMonitor(bounds, cursor);
-                ShowScreenshot(bmp, bounds, device);
-            }
-            catch
-            {
-                bmp?.Dispose();
-                _shotOpening = false;
-                ScreenshotToast.Show("Не удалось снять экран.", bounds, 2.4);
-            }
+                System.Drawing.Bitmap? bmp = null;
+                try
+                {
+                    bmp = ScreenCapture.CaptureMonitor(bounds, cursor);
+                }
+                catch
+                {
+                    bmp?.Dispose();
+                    bmp = null;
+                }
+
+                _dispatcher.BeginInvoke(() =>
+                {
+                    if (bmp == null || _disposed || _shot != null || _shotCancel)
+                    {
+                        bmp?.Dispose();
+                        _shotOpening = false;
+                        _shotCancel = false;
+                        if (bmp == null && !_disposed && !_shotCancel)
+                            ScreenshotToast.Show("Не удалось снять экран.", bounds, 2.4);
+                        return;
+                    }
+
+                    ShowScreenshot(bmp, bounds, device);
+                });
+            });
         }, DispatcherPriority.ApplicationIdle);
     }
 

@@ -148,7 +148,10 @@ public partial class RadialMenuWindow: Window
         _slotSize = slotSize;
         _cachedFit = fit;
         _skinActive = fit != null;
-        _discClearR = fit?.ClearRadius ?? (radius + slotSize * 0.55 + 54);
+        double artClear = 0;
+        if (fit == null && RingLooks.TryLayout(AppearanceStore.ActiveLook(), radius, out var artLay))
+            artClear = artLay.Clear;
+        _discClearR = fit?.ClearRadius ?? (artClear > 0 ? artClear : radius + slotSize * 0.55 + 54);
         BuildButtons();
         _builtAtAppearanceRevision = rev;
     }
@@ -265,6 +268,9 @@ public partial class RadialMenuWindow: Window
                 || ReferenceEquals(child, OrbitRing)
                 || ReferenceEquals(child, SoftGlow)
                 || ReferenceEquals(child, RingSkin)
+                || ReferenceEquals(child, LookAura)
+                || ReferenceEquals(child, LookRing)
+                || ReferenceEquals(child, LookCore)
                 || ReferenceEquals(child, HintCard)
                 || ReferenceEquals(child, _flyoutPanel)
                 || ReferenceEquals(child, _peekPanel))
@@ -401,6 +407,7 @@ public partial class RadialMenuWindow: Window
         Canvas.SetTop(SoftGlow, Math.Round(cy - glowR));
 
         ApplyRingSkin(cx, cy, glowR, skinFit);
+        ApplyLookArt(cx, cy, radius, skinFit);
     }
 
     private void ApplyLookChrome(RingLookPalette look)
@@ -467,6 +474,76 @@ public partial class RadialMenuWindow: Window
         _discClearR = Math.Max(glowR, skinFit.ClearRadius);
     }
 
+    private string? _lookAuraPath;
+    private string? _lookRingPath;
+    private string? _lookCorePath;
+
+    /// <summary>Рисунки вида: свечение сзади, кольцо под кнопками, центр под главной кнопкой.</summary>
+    private void ApplyLookArt(double cx, double cy, double radius, SkinFit? skinFit)
+    {
+        bool skinOn = skinFit != null && RingSkin.Visibility == Visibility.Visible;
+        var look = AppearanceStore.ActiveLook();
+        if (skinOn || !RingLooks.TryLayout(look, radius, out var lay))
+        {
+            HideLookArt();
+            return;
+        }
+
+        bool ok = ShowLookLayer(LookAura, RingLooks.LayerPath(look, "aura"), ref _lookAuraPath, cx, cy, lay.AuraRadius * 2, lay.AuraOpacity)
+            && ShowLookLayer(LookRing, RingLooks.LayerPath(look, "ring"), ref _lookRingPath, cx, cy, lay.RingRadius * 2, 1)
+            && ShowLookLayer(LookCore, RingLooks.LayerPath(look, "core"), ref _lookCorePath, cx, cy, lay.CoreSize, 1);
+        if (!ok)
+        {
+            HideLookArt();
+            SoftGlow.Visibility = Visibility.Visible;
+            OrbitRing.Visibility = Visibility.Visible;
+            MatteDisc.Visibility = Visibility.Visible;
+            return;
+        }
+
+        SoftGlow.Visibility = Visibility.Collapsed;
+        OrbitRing.Visibility = Visibility.Collapsed;
+        MatteDisc.Visibility = Visibility.Collapsed;
+        _discClearR = lay.Clear;
+    }
+
+    private void HideLookArt()
+    {
+        LookAura.Visibility = Visibility.Collapsed;
+        LookRing.Visibility = Visibility.Collapsed;
+        LookCore.Visibility = Visibility.Collapsed;
+    }
+
+    private static bool ShowLookLayer(
+        System.Windows.Controls.Image image,
+        string? path,
+        ref string? loaded,
+        double cx,
+        double cy,
+        double size,
+        double opacity)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        if (!string.Equals(loaded, path, StringComparison.OrdinalIgnoreCase) || image.Source == null)
+        {
+            var bmp = RingImageCache.GetSkin(path, size > 200 ? 900 : 420);
+            if (bmp == null)
+                return false;
+            image.Source = bmp;
+            loaded = path;
+        }
+
+        image.Width = size;
+        image.Height = size;
+        image.Opacity = opacity;
+        Canvas.SetLeft(image, Math.Round(cx - size / 2));
+        Canvas.SetTop(image, Math.Round(cy - size / 2));
+        image.Visibility = Visibility.Visible;
+        return true;
+    }
+
     /// <summary>Стрелка снаружи слота, по радиусу наружу: не в углу кнопки.</summary>
     private FrameworkElement PlaceGroupChevron(double bx, double by, double angle, double slotSize)
     {
@@ -482,7 +559,7 @@ public partial class RadialMenuWindow: Window
             FontSize = 11,
             Width = markSize,
             Height = markSize,
-            Foreground = Solid(Color.FromArgb(0xDD, 0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(ChevronColor()),
             TextAlignment = System.Windows.TextAlignment.Center,
             IsHitTestVisible = false,
             // Поворот: стрелка MDL2 смотрит вправо: крутим по касательной наружу.
@@ -611,16 +688,29 @@ public partial class RadialMenuWindow: Window
         st.ScaleY = to;
     }
 
+    private static Color ChevronColor()
+    {
+        var look = AppearanceStore.ActiveLook();
+        return string.IsNullOrEmpty(look.ArtFolder)
+            ? Color.FromArgb(0xDD, 0xF5, 0xF0, 0xE8)
+            : look.IconColor;
+    }
+
     private static UIElement CreateIconVisual(MenuAction action, double size, bool center, bool isFlyout)
     {
+        var look = AppearanceStore.ActiveLook();
+        bool onWheel = !isFlyout;
+        bool themed = onWheel && !string.IsNullOrEmpty(look.ArtFolder);
+        var ink = themed ? look.IconColor : Color.FromRgb(0xF5, 0xF0, 0xE8);
+
+        UIElement visual;
         if (action.HasFileIcon)
         {
-            // На кольце крупно, как системные папки; без подложки: сама иконка.
-            double iconSize = isFlyout ? 32: Math.Min(40, size * 0.62);
+            double iconSize = isFlyout ? 32 : Math.Min(themed ? size * 0.40 : 40, size * 0.62);
             var bitmap = RingImageCache.GetIcon(action.IconPath);
             if (bitmap != null)
             {
-                return new System.Windows.Controls.Image
+                visual = new System.Windows.Controls.Image
                 {
                     Source = bitmap,
                     Width = iconSize,
@@ -635,18 +725,64 @@ public partial class RadialMenuWindow: Window
                     IsHitTestVisible = false
                 };
             }
+            else
+            {
+                visual = GlyphBlock(action, size, center, isFlyout, onWheel, ink);
+            }
+        }
+        else
+        {
+            visual = GlyphBlock(action, size, center, isFlyout, onWheel, ink);
         }
 
-        // На колесе без диска глиф чуть крупнее и светлее, чтобы читался сам по себе.
-        bool onWheel = !isFlyout;
+        if (!themed)
+            return visual;
+
+        // Тарелка меньше кнопки и сидит внутри плотной части кольца, не на шипах.
+        double plate = size * (center ? 0.50 : 0.58);
+        var disc = new System.Windows.Shapes.Ellipse
+        {
+            Width = plate,
+            Height = plate,
+            Fill = Solid(look.PlateColor),
+            Stroke = Solid(look.IconColor),
+            StrokeThickness = center ? 1.4 : 1.7,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+        var inner = new System.Windows.Shapes.Ellipse
+        {
+            Width = plate * 0.72,
+            Height = plate * 0.72,
+            Stroke = Solid(look.IconColor),
+            StrokeThickness = 1,
+            Opacity = 0.55,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+        var host = new Grid
+        {
+            Width = size,
+            Height = size,
+            IsHitTestVisible = false
+        };
+        host.Children.Add(disc);
+        host.Children.Add(inner);
+        host.Children.Add(visual);
+        return host;
+    }
+
+    private static TextBlock GlyphBlock(MenuAction action, double size, bool center, bool isFlyout, bool onWheel, Color ink)
+    {
+        double font = center ? (onWheel ? 18 : 28) : (isFlyout ? 18 : (string.IsNullOrEmpty(AppearanceStore.ActiveLook().ArtFolder) ? 26 : 17));
         return new TextBlock
         {
-            Text = string.IsNullOrEmpty(action.Glyph) ? "\uE8B7": action.Glyph,
+            Text = string.IsNullOrEmpty(action.Glyph) ? "\uE8B7" : action.Glyph,
             FontFamily = IconFont,
-            FontSize = center ? 28 : (isFlyout ? 18 : 26),
-            Foreground = onWheel
-                ? Solid(Color.FromRgb(0xF5, 0xF0, 0xE8))
-                : Brushes.White,
+            FontSize = font,
+            Foreground = onWheel ? Solid(ink) : Brushes.White,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             IsHitTestVisible = false

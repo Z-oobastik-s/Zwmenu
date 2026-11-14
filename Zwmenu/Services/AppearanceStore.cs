@@ -12,7 +12,7 @@ public sealed class AppearanceSettings
     /// <summary>Имя файла в Assets/Skins, например skin-01.png.</summary>
     public string? RingSkinFile { get; set; }
 
-    /// <summary>0..4 — вид диска/орбиты/подсказки. См. RingLooks.</summary>
+    /// <summary>0..11 — вид диска. 0..4 палитра, дальше рисунки. См. RingLooks.</summary>
     public int RingLook { get; set; }
 
     /// <summary>hold | instant | alt — см. MiddleButtonMode.</summary>
@@ -263,22 +263,6 @@ public static class AppearanceStore
         s.MiddleClickMode = mode is "instant" or "alt" or "hold" ? mode : "hold";
         s.MiddleHoldMs = Math.Clamp(s.MiddleHoldMs <= 0 ? 220 : s.MiddleHoldMs, 120, 600);
         s.RingLook = Math.Clamp(s.RingLook, 0, RingLooks.Count - 1);
-
-        var skins = ListSkins();
-        if (skins.Count == 0)
-        {
-            s.UseRingSkin = false;
-            s.RingSkinFile = null;
-            return;
-        }
-
-        if (string.Equals(s.RingSkinFile, "crimson-ring.png", StringComparison.OrdinalIgnoreCase))
-            s.RingSkinFile = "skin-01.png";
-
-        if (string.IsNullOrWhiteSpace(s.RingSkinFile)
-            || skins.All(x => !string.Equals(x.FileName, s.RingSkinFile, StringComparison.OrdinalIgnoreCase)))
-        {
-            s.RingSkinFile = skins[0].FileName;
-        }
+        s.UseRingSkin = false;
     }
 }

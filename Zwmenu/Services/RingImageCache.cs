@@ -68,6 +68,13 @@ public static class RingImageCache
             string? path = AppearanceStore.ResolveSelectedPath();
             if (path != null)
                 GetSkin(path);
+            var look = AppearanceStore.ActiveLook();
+            foreach (string layer in new[] { "aura", "ring", "core" })
+            {
+                string? art = RingLooks.LayerPath(look, layer);
+                if (art != null)
+                    GetSkin(art, 900);
+            }
         }
         catch
         {

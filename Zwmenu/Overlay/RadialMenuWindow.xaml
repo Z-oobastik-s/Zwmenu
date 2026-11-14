@@ -50,6 +50,28 @@
                 </Image.CacheMode>
             </Image>
 
+            <Image x:Name="LookAura" Stretch="Uniform" IsHitTestVisible="False"
+                   Visibility="Collapsed" Opacity="1"
+                   RenderOptions.BitmapScalingMode="Fant" Panel.ZIndex="1">
+                <Image.CacheMode>
+                    <BitmapCache EnableClearType="False" RenderAtScale="1" SnapsToDevicePixels="True"/>
+                </Image.CacheMode>
+            </Image>
+            <Image x:Name="LookRing" Stretch="Uniform" IsHitTestVisible="False"
+                   Visibility="Collapsed" Opacity="1"
+                   RenderOptions.BitmapScalingMode="Fant" Panel.ZIndex="4">
+                <Image.CacheMode>
+                    <BitmapCache EnableClearType="False" RenderAtScale="1" SnapsToDevicePixels="True"/>
+                </Image.CacheMode>
+            </Image>
+            <Image x:Name="LookCore" Stretch="Uniform" IsHitTestVisible="False"
+                   Visibility="Collapsed" Opacity="1"
+                   RenderOptions.BitmapScalingMode="Fant" Panel.ZIndex="8">
+                <Image.CacheMode>
+                    <BitmapCache EnableClearType="False" RenderAtScale="1" SnapsToDevicePixels="True"/>
+                </Image.CacheMode>
+            </Image>
+
             <!-- Орбита ровно под центрами слотов -->
             <Ellipse x:Name="OrbitRing" Width="232" Height="232" Canvas.Left="214" Canvas.Top="174"
                      StrokeThickness="1.5" IsHitTestVisible="False" Panel.ZIndex="3">

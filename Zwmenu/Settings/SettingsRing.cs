@@ -9,9 +9,27 @@ namespace Zwmenu.Settings;
 public partial class SettingsWindow
 {
     private int _ringLook;
+    private readonly List<Button> _lookButtons = new();
 
     private void InitRingLooks()
     {
+        RingLookGrid.Children.Clear();
+        _lookButtons.Clear();
+        foreach (var (id, title, _) in RingLooks.Catalog())
+        {
+            var button = new Button
+            {
+                Content = title,
+                Tag = id.ToString(),
+                Margin = new Thickness(0, 0, 6, 6),
+                Padding = new Thickness(4, 8, 4, 8),
+                FontSize = 12.5
+            };
+            button.Click += OnRingLook;
+            RingLookGrid.Children.Add(button);
+            _lookButtons.Add(button);
+        }
+
         _ringLook = AppearanceStore.GetRingLook();
         RefreshRingLookUi();
     }
@@ -26,13 +44,7 @@ public partial class SettingsWindow
         _ringLook = look;
         var s = AppearanceStore.Current;
         s.RingLook = look;
-        // Чтобы новый вид был сразу виден на диске, а не спрятан под PNG.
-        if (s.UseRingSkin)
-        {
-            s.UseRingSkin = false;
-            FillRingSkinCombo();
-        }
-
+        s.UseRingSkin = false;
         AppearanceStore.Save(s);
         RefreshRingLookUi();
         Note($"Вид круга: «{RingLooks.Get(look).Title}». Открой колесо колёсиком.");
@@ -40,9 +52,8 @@ public partial class SettingsWindow
 
     private void RefreshRingLookUi()
     {
-        Button[] buttons = [RingLook0, RingLook1, RingLook2, RingLook3, RingLook4];
-        for (int i = 0; i < buttons.Length; i++)
-            PaintRingLook(buttons[i], i == _ringLook);
+        for (int i = 0; i < _lookButtons.Count; i++)
+            PaintRingLook(_lookButtons[i], i == _ringLook);
         var look = RingLooks.Get(_ringLook);
         RingLookHint.Text = look.Hint;
         DrawRingLookPreview(look);
@@ -59,8 +70,11 @@ public partial class SettingsWindow
     private void DrawRingLookPreview(RingLookPalette look)
     {
         RingLookPreview.Children.Clear();
-        double cx = 130;
-        double cy = 80;
+        if (RingArt.Place(RingLookPreview, look, 152, 110, 56, 22, 30))
+            return;
+
+        double cx = 152;
+        double cy = 110;
         double glow = 74;
         double disc = 52;
         double orbit = 40;

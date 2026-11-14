@@ -12,11 +12,45 @@ public static class ScreenCapture
     private const int CursorShowing = 0x00000001;
     private const int DiNormal = 0x0003;
 
+    /// <summary>dxgi, если кадр взят с вывода монитора, иначе gdi.</summary>
+    public static string LastBackend { get; private set; } = "";
+
     public static Bitmap CaptureMonitor(Rectangle bounds, bool cursor)
     {
         if (bounds.Width < 1 || bounds.Height < 1)
             throw new InvalidOperationException("Пустой экран.");
 
+        Bitmap? live = null;
+        try
+        {
+            live = ScreenDxgi.TryCapture(bounds);
+        }
+        catch
+        {
+            live?.Dispose();
+            live = null;
+        }
+
+        if (live != null)
+        {
+            LastBackend = "dxgi";
+            if (cursor)
+            {
+                try
+                {
+                    using var g = Graphics.FromImage(live);
+                    DrawCursor(g, bounds);
+                }
+                catch
+                {
+                    // курсор не обязателен: сам кадр уже есть
+                }
+            }
+
+            return live;
+        }
+
+        LastBackend = "gdi";
         var bmp = new Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         try
         {
@@ -31,6 +65,17 @@ public static class ScreenCapture
             bmp.Dispose();
             throw;
         }
+    }
+
+    public static void SelfCheck()
+    {
+        var screen = System.Windows.Forms.Screen.PrimaryScreen
+            ?? throw new InvalidOperationException("Нет основного экрана.");
+        using var bmp = CaptureMonitor(screen.Bounds, false);
+        if (bmp.Width != screen.Bounds.Width || bmp.Height != screen.Bounds.Height)
+            throw new InvalidOperationException("Размер снимка не совпал с экраном.");
+        if (LastBackend != "dxgi")
+            throw new InvalidOperationException("Снимок не увидел вывод монитора: " + LastBackend + " / " + ScreenDxgi.FailReason);
     }
 
     public static BitmapSource ToFrozen(Bitmap bmp)

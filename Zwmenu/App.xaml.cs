@@ -22,6 +22,15 @@ public partial class App: Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (PrintPeer.TakeRequest(e.Args))
+            return;
+        if (e.Args.Any(a => string.Equals(a, "--looksheet", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            LookSheet.Run();
+            return;
+        }
+
         if (e.Args.Any(a => string.Equals(a, "--selfcheck", StringComparison.OrdinalIgnoreCase)))
         {
             string report = Path.Combine(Path.GetTempPath(), "zwmenu-selfcheck.txt");
@@ -37,6 +46,7 @@ public partial class App: Application
                 FolderConsole.SelfCheck();
                 BackgroundRemoveService.SelfCheck();
                 AppUpdate.SelfCheck();
+                ScreenCapture.SelfCheck();
                 WorkshopWindow.Smoke();
                 File.WriteAllText(report, "ok");
                 Environment.Exit(0);
@@ -103,6 +113,7 @@ public partial class App: Application
                 Dispatcher.BeginInvoke(EdgeShareWindow.ShowCurrent);
         };
         EdgeShareService.Shared.Start();
+        PrintPeer.StartServer();
         StayAwake.Start();
         UpdateWindow.ExitForUpdate = () =>
         {
@@ -202,6 +213,7 @@ public partial class App: Application
         }
 
         _exiting = true;
+        PrintPeer.StopServer();
         AppUpdate.Stop();
         EdgeShareService.Shared.Dispose();
         _workoutReminder?.Dispose();

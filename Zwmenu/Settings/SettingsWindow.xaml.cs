@@ -39,7 +39,6 @@ public partial class SettingsWindow: Window
         AppearanceStore.Reload();
         FillMiddleClickModeCombo();
         FillDictation();
-        FillRingSkinCombo();
         InitRingLooks();
         FillScreenshot();
         FillTranslateHotkey();
@@ -1440,69 +1439,6 @@ public partial class SettingsWindow: Window
 
         public int Index { get; }
         public string Title { get; }
-    }
-
-    private void FillRingSkinCombo()
-    {
-        var skins = AppearanceStore.ListSkins();
-        var items = new List<RingSkinComboItem>
-        {
-            new(null, "Обычный диск (без скина)")
-        };
-        foreach (var skin in skins)
-            items.Add(new RingSkinComboItem(skin.FileName, skin.Title));
-
-        RingSkinCombo.DisplayMemberPath = nameof(RingSkinComboItem.Title);
-        RingSkinCombo.ItemsSource = items;
-        RingSkinCombo.IsEnabled = true;
-
-        var cur = AppearanceStore.Current;
-        if (!cur.UseRingSkin || string.IsNullOrWhiteSpace(cur.RingSkinFile))
-            RingSkinCombo.SelectedIndex = 0;
-        else
-        {
-            int idx = items.FindIndex(i =>
-                i.FileName != null
-                && string.Equals(i.FileName, cur.RingSkinFile, StringComparison.OrdinalIgnoreCase));
-            RingSkinCombo.SelectedIndex = idx >= 0 ? idx : 0;
-        }
-
-        if (skins.Count == 0)
-            RingSkinCombo.ToolTip = "Папка Assets\\Skins пуста: положи туда PNG без фона.";
-    }
-
-    private void OnRingSkinSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_suspend) return;
-        if (RingSkinCombo.SelectedItem is not RingSkinComboItem pick)
-            return;
-
-        var s = AppearanceStore.Current;
-        if (pick.FileName == null)
-        {
-            s.UseRingSkin = false;
-            AppearanceStore.Save(s);
-            Note("Скин круга выключен: обычный диск.");
-            return;
-        }
-
-        s.UseRingSkin = true;
-        s.RingSkinFile = pick.FileName;
-        AppearanceStore.Save(s);
-        Note($"Скин «{pick.Title}»: открой колесо, чтобы увидеть рамку.");
-    }
-
-    private sealed class RingSkinComboItem
-    {
-        public RingSkinComboItem(string? fileName, string title)
-        {
-            FileName = fileName;
-            Title = title;
-        }
-
-        public string? FileName { get; }
-        public string Title { get; }
-        public override string ToString() => Title;
     }
 
     private sealed class MiddleClickModeItem
