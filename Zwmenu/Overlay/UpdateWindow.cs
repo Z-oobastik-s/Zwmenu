@@ -180,7 +180,7 @@ public sealed class UpdateWindow : Window
                 return;
             }
 
-            _text.Text = "Ставлю. Программа сейчас закроется и откроется снова.";
+            _text.Text = "Ставлю. Откроюсь снова и покажу, что обновление прошло.";
             AppUpdate.StartInstaller(offer.Version);
             if (ExitForUpdate != null)
                 ExitForUpdate();

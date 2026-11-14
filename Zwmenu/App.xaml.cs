@@ -109,6 +109,8 @@ public partial class App: Application
             try { _settings?.CloseForExit(); } catch { /* окно настроек уже закрыто */ }
             ExitApp(fromWindows: true);
         };
+        if (e.Args.Any(a => string.Equals(a, "--updated", StringComparison.OrdinalIgnoreCase)))
+            UpdateDoneWindow.ShowNow();
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
         updateTimer.Tick += (_, _) =>
         {
