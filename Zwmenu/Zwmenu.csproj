@@ -13,7 +13,7 @@
     <ApplicationIcon>Assets\zwmenu.ico</ApplicationIcon>
     <RootNamespace>Zwmenu</RootNamespace>
     <AssemblyName>Zwmenu</AssemblyName>
-    <Version>1.3.37</Version>
+    <Version>1.3.38</Version>
     <Product>Zwmenu</Product>
     <Description>Desktop radial action menu for Windows</Description>
   </PropertyGroup>
