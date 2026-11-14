@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $exe = Join-Path $root "publish\win-x64\Zwmenu.exe"
 $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).FileVersion
-if ($fileVersion -ne "$version.0") { throw "V programme versiya $fileVersion, a v proekte $version" }
+if ($fileVersion -ne "${version}.0") { throw "V programme versiya $fileVersion, a v proekte $version" }
 
 Write-Output "Sobirayu ustanovshik"
 & (Join-Path $root "tools\innosetup\ISCC.exe") (Join-Path $root "installer\Zwmenu.iss")
@@ -65,7 +65,7 @@ try {
     }
   }
   if ($has) {
-    Write-Output "Reliz v$version uzhe s ustanovshikom: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v$version"
+    Write-Output "Reliz v${version} uzhe s ustanovshikom: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v${version}"
     exit 0
   }
 
@@ -74,7 +74,7 @@ try {
   $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/octet-stream" --data-binary "@$setup" $upload
   if ($LASTEXITCODE -ne 0) { throw "Zagruzka oborvalas" }
   if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal ustanovshik ($code)" }
-  Write-Output "Reliz v$version: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v$version"
+  Write-Output "Reliz v${version}: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v${version}"
 }
 finally {
   if (Test-Path -LiteralPath $hdr) { Remove-Item -LiteralPath $hdr -Force }
