@@ -50,7 +50,8 @@ if not errorlevel 1 (
   set "GHTOKEN="
   exit /b 1
 )
-"%GIT%" grep -I -n "ghp_" --cached >nul 2>&1
+set "NEEDLE=ghp"
+"%GIT%" grep -I -n "%NEEDLE%_" --cached >nul 2>&1
 if not errorlevel 1 (
   echo V fajlah nashelsya token. Push ostanovlen.
   "%GIT%" reset -q
@@ -67,7 +68,7 @@ if errorlevel 1 (
   )
 )
 
-"%GIT%" -c credential.helper= -c http.extraheader="AUTHORIZATION: bearer %GHTOKEN%" push -u origin main
+"%GIT%" -c credential.helper= push "https://x-access-token:%GHTOKEN%@github.com/Z-oobastik-s/Zwmenu.git" main:main
 set "ERR=%ERRORLEVEL%"
 set "GHTOKEN="
 exit /b %ERR%
