@@ -1,0 +1,56 @@
+﻿<Window x:Class="Zwmenu.Workout.WorkoutReminderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Zwmenu: пора двигаться"
+        Width="520" Height="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="True"
+        FontFamily="Segoe UI Variable Text, Segoe UI">
+    <Border CornerRadius="18" BorderThickness="1" BorderBrush="#44F5F0E8" Margin="12">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF1A1E1C" Offset="0"/>
+                <GradientStop Color="#FF121814" Offset="0.55"/>
+                <GradientStop Color="#FF1C2420" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Grid Margin="28">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0">
+                <Button DockPanel.Dock="Right" Content="✕" Width="36" Height="36" Click="OnDismiss"
+                        Background="#22F5F0E8" Foreground="#CCF5F0E8" BorderThickness="0" Cursor="Hand"
+                        FontSize="14" VerticalAlignment="Top"/>
+                <StackPanel>
+                    <TextBlock Text="Zwmenu" FontSize="13" Foreground="#88A8C5A0" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="Headline" Text="Пора немного подвигаться" Margin="0,8,0,0"
+                               FontSize="26" FontWeight="SemiBold" Foreground="#FFF5F0E8" TextWrapping="Wrap"/>
+                </StackPanel>
+            </DockPanel>
+
+            <StackPanel Grid.Row="1" Margin="0,18,0,0" VerticalAlignment="Center">
+                <TextBlock x:Name="BodyText" FontSize="15" LineHeight="22" Foreground="#C8F5F0E8"
+                           TextWrapping="Wrap"/>
+                <Border Margin="0,18,0,0" Background="#223E5E4A" CornerRadius="12" Padding="14,12">
+                    <TextBlock x:Name="TipText" FontSize="14" Foreground="#FFA8C5A0" TextWrapping="Wrap"/>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                <Button Content="Позже" Padding="18,11" Margin="0,0,10,0" Click="OnSnooze"
+                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                <Button Content="Открыть тренировку" Padding="18,11" Click="OnOpenWorkout"
+                        Background="#FF3E5E4A" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontWeight="SemiBold"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

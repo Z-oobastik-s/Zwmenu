@@ -1,0 +1,51 @@
+[
+  {
+    "id": 1,
+    "category": "Чат",
+    "title": "ChatGPT",
+    "url": "https://chatgpt.com/",
+    "hotkey": ""
+  },
+  {
+    "id": 2,
+    "category": "Чат",
+    "title": "DeepSeek",
+    "url": "https://chat.deepseek.com/a/chat",
+    "hotkey": ""
+  },
+  {
+    "id": 3,
+    "category": "Генерация предметов Minecraft",
+    "title": "Gamergeeks",
+    "url": "https://www.gamergeeks.net/apps/minecraft/give-command-generator",
+    "hotkey": ""
+  },
+  {
+    "id": 4,
+    "category": "Головы майнкрафт",
+    "title": "Minecraft-heads",
+    "url": "https://minecraft-heads.com/custom-heads/alphabet?start=80",
+    "hotkey": ""
+  },
+  {
+    "id": 5,
+    "category": "Генератор табличек",
+    "title": "gamergeeks.net",
+    "url": "https://www.gamergeeks.net/apps/minecraft/give-command-generator/signs",
+    "hotkey": ""
+  },
+  {
+    "id": 6,
+    "category": "Генератор брони",
+    "title": "gamergeeks.net",
+    "url": "https://www.gamergeeks.net/apps/minecraft/give-command-generator/armor",
+    "hotkey": ""
+  },
+  {
+    "id": 7,
+    "category": "Генератор зелья",
+    "title": "gamergeeks.net",
+    "url": "https://www.gamergeeks.net/apps/minecraft/give-command-generator/potions",
+    "hotkey": ""
+  }
+]

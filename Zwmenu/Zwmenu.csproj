@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\zwmenu.ico</ApplicationIcon>
+    <RootNamespace>Zwmenu</RootNamespace>
+    <AssemblyName>Zwmenu</AssemblyName>
+    <Product>Zwmenu</Product>
+    <Description>Desktop radial action menu for Windows</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="tessdata\*.traineddata">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Data\Give\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="Data\snippets.seed.json">
+      <LogicalName>Zwmenu.snippets.seed.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Data\links.seed.json">
+      <LogicalName>Zwmenu.links.seed.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Data\commands.seed.json">
+      <LogicalName>Zwmenu.commands.seed.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <PackageReference Include="TesseractOCR" Version="5.5.2" />
+    <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+</Project>

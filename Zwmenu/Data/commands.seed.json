@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "title": "Онлайн",
+    "command": "list"
+  },
+  {
+    "id": 2,
+    "title": "Тпс",
+    "command": "tps"
+  }
+]

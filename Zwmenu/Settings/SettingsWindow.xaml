@@ -1,0 +1,1005 @@
+<Window x:Class="Zwmenu.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="clr-namespace:Zwmenu.Settings"
+        Title="Zwmenu: настройки"
+        Width="960" Height="640"
+        MinWidth="760" MinHeight="480"
+        WindowStartupLocation="Manual"
+        Background="#FF141416"
+        Foreground="#FFF5F0E8"
+        FontFamily="Segoe UI Variable Text, Segoe UI">
+    <Window.Resources>
+        <settings:ColorStringConverter x:Key="TintBrush"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF1A1A1C"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFF5F0E8"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FF3A3A40"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF5F0E8"/>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF1A1A1E"/>
+            <Setter Property="Foreground" Value="#FFF5F0E8"/>
+            <Setter Property="BorderBrush" Value="#22F5F0E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="CaretBrush" Value="#FFF5F0E8"/>
+            <Setter Property="SelectionBrush" Value="#FF3E5A6E"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Background="#FF1A1A1E"
+                                          Margin="{TemplateBinding Padding}"
+                                          Focusable="False"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Disabled"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#66A8C5A0"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#FFF5F0E8"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF2C2C32"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF34343C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#FF1A1A1E"/>
+            <Setter Property="Foreground" Value="#FFF5F0E8"/>
+            <Setter Property="BorderBrush" Value="#22F5F0E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" ClickMode="Press"
+                                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="8">
+                                            <Path Grid.Column="1" Width="8" Height="5" Stretch="Fill"
+                                                  HorizontalAlignment="Right" Margin="0,0,14,0"
+                                                  Data="M 0 0 L 4 4 L 8 0"
+                                                  Stroke="#B0F5F0E8" StrokeThickness="1.3"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#FF222228"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#66A8C5A0"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{}{0}"
+                                              Margin="12,0,32,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              RecognizesAccessKey="True"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            <Popup Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <Border Background="#FF1A1A1E"
+                                        BorderBrush="#33F5F0E8"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Margin="0,4,0,0"
+                                        Padding="4"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer Background="#FF1A1A1E"
+                                                  VerticalScrollBarVisibility="Disabled"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  MaxHeight="220">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#FF2A2A2E"/>
+            <Setter Property="Foreground" Value="#FFF5F0E8"/>
+            <Setter Property="BorderBrush" Value="#33F5F0E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF34343A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF3E3E44"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#FF3E5A6E"/>
+            <Setter Property="BorderBrush" Value="#553E5A6E"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF4A6A80"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinWidth" Value="128"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="FontSize" Value="13.5"/>
+        </Style>
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="#FF161618"/>
+            <Setter Property="Foreground" Value="#FFF5F0E8"/>
+            <Setter Property="BorderBrush" Value="#22F5F0E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
+                            <ScrollViewer Focusable="False"
+                                          Background="#FF161618"
+                                          Padding="{TemplateBinding Padding}"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter/>
+                            </ScrollViewer>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF242428"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF323238"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="Настройки" FontSize="22" FontWeight="SemiBold"
+                       FontFamily="Segoe UI Variable Display, Segoe UI"/>
+            <TextBlock x:Name="PageHint" Margin="0,4,0,0" Opacity="0.65" FontSize="13" TextWrapping="Wrap"
+                       Text="Пункты колеса. Первый — в центре, остальные сверху по часовой."/>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <Button x:Name="NavWheel" Style="{StaticResource NavButton}" Content="Колесо" Click="OnNavWheel"/>
+                <Button x:Name="NavBehavior" Style="{StaticResource NavButton}" Content="Поведение" Click="OnNavBehavior"/>
+                <Button x:Name="NavShot" Style="{StaticResource NavButton}" Content="Скриншот" Click="OnNavShot"/>
+                <Button x:Name="NavShelf" Style="{StaticResource NavButton}" Content="Полка" Click="OnNavShelf"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Grid Grid.Row="1" Margin="0,14,0,12">
+            <Grid x:Name="PageWheel">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" MinWidth="220"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*" MinWidth="280"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid>
+                        <TextBox x:Name="ItemSearchBox" TextChanged="OnItemSearchChanged"
+                                 ToolTip="Название, путь, подсказка или пункт внутри группы"/>
+                        <TextBlock x:Name="SearchWatermark" IsHitTestVisible="False"
+                                   Margin="14,0,12,0" VerticalAlignment="Center"
+                                   Opacity="0.4" FontSize="13"
+                                   Text="Найти пункт"/>
+                    </Grid>
+                    <Button x:Name="SearchClear" Grid.Column="1" Content="Сбросить"
+                            Margin="8,0,0,0" Padding="10,6" Visibility="Collapsed"
+                            Click="OnSearchClear"/>
+                </Grid>
+                <TextBlock x:Name="SearchEmpty" DockPanel.Dock="Top" Visibility="Collapsed"
+                           Margin="2,0,0,8" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"
+                           Text="Ничего не нашлось."/>
+                <UniformGrid DockPanel.Dock="Bottom" Columns="3" Margin="0,10,0,0">
+                    <Button Content="Добавить" Margin="0,0,4,4" Click="OnAdd"/>
+                    <Button Content="Копия" Margin="2,0,2,4" Click="OnDuplicate"/>
+                    <Button Content="Удалить" Margin="4,0,0,4" Click="OnDelete"/>
+                    <Button Content="Вверх" Margin="0,0,4,0" Click="OnMoveUp"/>
+                    <Button Content="Вниз" Margin="2,0,2,0" Click="OnMoveDown"/>
+                    <Button Content="Сброс" Margin="4,0,0,0" Click="OnReset"/>
+                </UniformGrid>
+
+                <ListBox x:Name="ItemList" Background="#FF161618" BorderBrush="#22F5F0E8"
+                         BorderThickness="1" Padding="6"
+                         SelectionChanged="OnSelectionChanged"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="32" Height="32" CornerRadius="16"
+                                        Background="#FF28282C"
+                                        VerticalAlignment="Center">
+                                    <Grid>
+                                        <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="#FFF8F4EE"/>
+                                        <Image Width="20" Height="20" Stretch="Uniform"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasFileIcon}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Setter Property="Source" Value="{Binding IconPath}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock Text="{Binding Role}" Opacity="0.5" FontSize="11"/>
+                                    <TextBlock Text="{Binding ExtraLabel}" FontSize="11" Foreground="#FFA8C5A0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ExtraLabel}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="Путь не задан или не найден" FontSize="11" Foreground="#FFD4A19A">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PathMissing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <ScrollViewer Grid.Column="2" Background="Transparent"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="Editor" IsEnabled="False">
+                    <Border x:Name="ChildEditBanner" Margin="0,0,0,12" Padding="12,10" CornerRadius="10"
+                            Background="#FF22282A" BorderBrush="#44A8C5A0" BorderThickness="1"
+                            Visibility="Collapsed">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="← К группе" Padding="12,6"
+                                    Click="OnBackToGroup" Cursor="Hand"
+                                    Background="#FF2A2A2E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8"/>
+                            <TextBlock x:Name="ChildEditText" VerticalAlignment="Center" TextWrapping="Wrap"
+                                       FontSize="12.5" Opacity="0.9"
+                                       Text="Редактируешь пункт внутри группы. Список группы ниже: можно сразу добавить или удалить."/>
+                        </DockPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Border x:Name="PreviewDisc" Width="64" Height="64" CornerRadius="32"
+                                Background="#FF3A3A3E" BorderBrush="#55F5F0E8" BorderThickness="1"/>
+                        <StackPanel Margin="14,6,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="PlaceText" FontSize="13" Opacity="0.7" Text="Место на колесе"/>
+                            <TextBlock x:Name="PathState" Margin="0,4,0,0" FontSize="12.5" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <TextBlock Text="Название" Opacity="0.6" FontSize="12" Margin="0,0,0,4"/>
+                    <TextBox x:Name="LabelBox" TextChanged="OnFieldChanged"/>
+
+                    <TextBlock Text="Заметка (на колесе не показывается)" Opacity="0.6" FontSize="12" Margin="0,12,0,4"/>
+                    <TextBox x:Name="DescriptionBox" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="64" TextChanged="OnFieldChanged"/>
+
+                    <TextBlock Text="Что делает пункт" Opacity="0.6" FontSize="12" Margin="0,12,0,4"/>
+                    <ComboBox x:Name="KindBox" SelectedIndex="1" SelectionChanged="OnKindChanged">
+                        <ComboBoxItem Content="Закрыть колесо"/>
+                        <ComboBoxItem Content="Открыть папку, файл, программу или сайт"/>
+                        <ComboBoxItem Content="Сочетание клавиш (Ctrl+W, Win+E…)"/>
+                        <ComboBoxItem Content="Группа: при наведении выезжает ещё меню"/>
+                    </ComboBox>
+
+                    <StackPanel x:Name="LaunchFields" Margin="0,12,0,0">
+                        <TextBlock x:Name="PathLabel" Text="Путь" Opacity="0.6" FontSize="12" Margin="0,0,0,4"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="PathBox" TextChanged="OnFieldChanged"/>
+                            <Button x:Name="BrowseFolderBtn" Grid.Column="1" Content="Папка…" Margin="8,0,0,0" Click="OnBrowseFolder"/>
+                            <Button x:Name="BrowseFileBtn" Grid.Column="2" Content="Файл…" Margin="8,0,0,0" Click="OnBrowseFile"/>
+                        </Grid>
+                        <TextBlock x:Name="PathHint" Opacity="0.45" FontSize="11.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Text="Папка → проводник. .exe / .lnk → запуск. https://… → браузер. Можно путь с диска D."/>
+
+                        <StackPanel x:Name="LaunchExtraFields">
+                            <TextBlock Text="Аргументы запуска" Opacity="0.6" FontSize="12" Margin="0,12,0,4"/>
+                            <TextBox x:Name="ArgsBox" TextChanged="OnFieldChanged"/>
+                            <TextBlock Opacity="0.45" FontSize="11.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="Необязательно. Только для программ, например /windowed. Для папок не используется."/>
+
+                            <CheckBox x:Name="RunAsAdminBox" Margin="0,14,0,0" Click="OnRunAsAdminClick"
+                                      Foreground="#FFF5F0E8" FontSize="13">
+                                <TextBlock TextWrapping="Wrap" LineHeight="18">
+                                    <Run Text="Запускать от имени администратора"/>
+                                    <LineBreak/>
+                                    <Run FontSize="11.5" Foreground="#88F5F0E8"
+                                         Text="Всегда спросит UAC. Для папок и приложений из Store не действует."/>
+                                </TextBlock>
+                            </CheckBox>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ChildrenPanel">
+                        <StackPanel x:Name="GroupLayoutPanel" Margin="0,16,0,0">
+                            <TextBlock Text="Вид выезжающего меню" Opacity="0.6" FontSize="12" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="GroupLayoutBox" SelectedIndex="0" SelectionChanged="OnGroupLayoutChanged">
+                                <ComboBoxItem Content="Игры / программы: список"/>
+                                <ComboBoxItem Content="Папки: сетка"/>
+                                <ComboBoxItem Content="Процессы: убить кликом"/>
+                            </ComboBox>
+                            <TextBlock Opacity="0.45" FontSize="11.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="«Процессы»: при наведении живой список, клик по иконке открывает диспетчер. Дочерние пункты не нужны."/>
+                        </StackPanel>
+
+                        <TextBlock Text="Пункты группы (добавляй и правь здесь)" Opacity="0.6" FontSize="12" Margin="0,14,0,4"/>
+                        <TextBlock Opacity="0.45" FontSize="11.5" Margin="0,0,0,6" TextWrapping="Wrap"
+                                   Text="До 24 штук. Кликни строку: поля выше правят именно её. «Добавить» сразу создаёт новый пункт."/>
+                        <ListBox x:Name="ChildList" MaxHeight="180" Background="#FF161618"
+                                 BorderBrush="#22F5F0E8" BorderThickness="1"
+                                 SelectionChanged="OnChildSelected"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="22" Height="22" CornerRadius="4" Background="#FF28282C">
+                                            <Grid>
+                                                <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Foreground="#FFF8F4EE"/>
+                                                <Image Width="16" Height="16" Stretch="Uniform"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasFileIcon}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Setter Property="Source" Value="{Binding IconPath}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
+                                                </Image>
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Text="{Binding Label}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <UniformGrid Columns="4" Margin="0,8,0,0">
+                            <Button Content="Добавить" Margin="0,0,4,0" Click="OnAddChild"/>
+                            <Button Content="Удалить" Margin="2,0,2,0" Click="OnRemoveChild"/>
+                            <Button Content="Выше" Margin="2,0,2,0" Click="OnChildUp"/>
+                            <Button Content="Ниже" Margin="4,0,0,0" Click="OnChildDown"/>
+                        </UniformGrid>
+                    </StackPanel>
+
+                    <TextBlock Text="Значок" Opacity="0.6" FontSize="12" Margin="0,16,0,6"/>
+                    <WrapPanel x:Name="IconHost"/>
+
+                    <TextBlock Text="Цвет" Opacity="0.6" FontSize="12" Margin="0,14,0,6"/>
+                    <WrapPanel x:Name="TintHost"/>
+
+                    <Button Content="Проверить этот пункт" HorizontalAlignment="Left"
+                            Margin="0,16,0,0" Click="OnTest"/>
+                </StackPanel>
+            </ScrollViewer>
+            </Grid>
+
+            <ScrollViewer x:Name="PageBehavior" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel MaxWidth="680" HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button x:Name="BehNavRun" Style="{StaticResource NavButton}" Content="Запуск" Tag="run" Click="OnBehSection"/>
+                        <Button x:Name="BehNavVoice" Style="{StaticResource NavButton}" Content="Диктовка" Tag="voice" Click="OnBehSection"/>
+                        <Button x:Name="BehNavLook" Style="{StaticResource NavButton}" Content="Вид и перевод" Tag="look" Click="OnBehSection"/>
+                    </StackPanel>
+
+                    <StackPanel x:Name="BehRun">
+                    <TextBlock Text="Запуск" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,10" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Zwmenu сидит в трее. Колесо и напоминания о тренировке доступны сразу после входа в Windows."/>
+                    <CheckBox x:Name="AutostartBox" Click="OnAutostartClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Запускать вместе с Windows"/>
+
+                    <TextBlock Text="Средняя кнопка" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Как открывать колесо и не мешать браузеру, где средняя кнопка закрывает вкладку."/>
+                    <ComboBox x:Name="MiddleClickModeCombo" MinWidth="320" MaxWidth="560"
+                              HorizontalAlignment="Left"
+                              SelectionChanged="OnMiddleClickModeChanged"/>
+
+                    </StackPanel>
+
+                    <StackPanel x:Name="BehVoice" Visibility="Collapsed">
+                    <TextBlock Text="Диктовка" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Зажал триггер — говори. Отпустил — текст в активное окно. Без удержания микрофон молчит. В игре (CS, Dota, Warhammer и любой полноэкранный режим) боковая кнопка микрофон не включает и достаётся самой игре. Меняется сразу, перезапуск не нужен."/>
+
+                    <TextBlock Margin="0,4,0,6" Opacity="0.7" FontSize="12.5" Text="Боковая кнопка мыши"/>
+                    <ComboBox x:Name="DictationSideCombo" MinWidth="320" MaxWidth="560"
+                              HorizontalAlignment="Left"
+                              SelectionChanged="OnDictationSideChanged"/>
+
+                    <TextBlock Margin="0,14,0,6" Opacity="0.7" FontSize="12.5" Text="Клавиша удержания (дополнительно или вместо мыши)"/>
+                    <DockPanel LastChildFill="True">
+                        <Button x:Name="DictationHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
+                                MinWidth="120" Margin="8,0,0,0" Click="OnDictationHotkeyAssign"/>
+                        <ComboBox x:Name="DictationHotkeyCombo" MinWidth="220" HorizontalAlignment="Left"
+                                  SelectionChanged="OnDictationHotkeyChanged"/>
+                    </DockPanel>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                               Text="«Назначить»: нажми боковую кнопку мыши (X1/X2) или любую клавишу. Esc — отмена."/>
+
+                    <TextBlock Margin="0,14,0,6" Opacity="0.7" FontSize="12.5" Text="Микрофон"/>
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Обновить" MinWidth="100" Margin="8,0,0,0"
+                                Click="OnDictationMicRefresh"/>
+                        <ComboBox x:Name="DictationMicCombo" MinWidth="280" MaxWidth="480"
+                                  HorizontalAlignment="Left"
+                                  SelectionChanged="OnDictationMicChanged"/>
+                    </DockPanel>
+
+                    <CheckBox x:Name="DictationHudBox" Margin="0,16,0,0" Click="OnDictationHudClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Показывать распознанный текст по центру экрана"/>
+                    <CheckBox x:Name="DictationSoundsBox" Margin="0,8,0,0" Click="OnDictationSoundsClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Тихий звук: старт записи и отпускание"/>
+                    <CheckBox x:Name="DictationPasteBox" Margin="0,8,0,0" Click="OnDictationPasteClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Сразу вставлять в активное окно (иначе только буфер)"/>
+                    <CheckBox x:Name="DictationCapBox" Margin="0,8,0,0" Click="OnDictationCapClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Делать первую букву заглавной"/>
+                    <CheckBox x:Name="DictationSpaceBox" Margin="0,8,0,0" Click="OnDictationSpaceClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Пробел после фразы (чтобы следующая не слипалась)"/>
+                    <CheckBox x:Name="DictationVoiceCmdBox" Margin="0,8,0,0" Click="OnDictationVoiceCmdClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Голосовые команды: «открой Telegram», «закрой вкладку», папки…"/>
+                    <TextBlock Margin="0,6,0,0" Opacity="0.45" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Та же кнопка удержания. Команда выполняется, обычная речь по-прежнему вставляется текстом."/>
+
+                    <TextBlock Text="Язык распознавания" Opacity="0.6" FontSize="12" Margin="0,14,0,4"/>
+                    <ComboBox x:Name="DictationLangCombo" MinWidth="320" MaxWidth="560"
+                              SelectionChanged="OnDictationLangChanged"/>
+                    <TextBlock Margin="0,6,0,0" Opacity="0.45" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Русский: только русская модель, обычно точнее. Суржик: обе модели, украинская побеждает только если она явно увереннее. Первый раз скачает украинскую (~130 МБ)."/>
+                    <TextBlock Margin="0,10,0,0" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                               Text="Тройной короткий клик той же кнопкой/клавишей — стереть всё в активном поле (Ctrl+A, Delete)."/>
+
+                    <DockPanel Margin="0,16,0,0" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="168"
+                                   FontSize="13.5" Opacity="0.9" Text="Игнор короткого клика"/>
+                        <TextBlock x:Name="DictationQuietLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                   Margin="10,0,0,0" FontSize="13.5" MinWidth="48" TextAlignment="Right" Text="280 мс"/>
+                        <Slider x:Name="DictationQuietSlider" Minimum="0" Maximum="800" TickFrequency="20"
+                                IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                ValueChanged="OnDictationQuietChanged"
+                                PreviewMouseLeftButtonUp="OnDictationTimingCommit"
+                                LostFocus="OnDictationTimingCommit"/>
+                    </DockPanel>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                               Text="Если отпустил быстрее и речи не было — без сообщения «ничего не расслышала»."/>
+
+                    <DockPanel Margin="0,14,0,0" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="168"
+                                   FontSize="13.5" Opacity="0.9" Text="Буфер микрофона"/>
+                        <TextBlock x:Name="DictationBufferLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                   Margin="10,0,0,0" FontSize="13.5" MinWidth="48" TextAlignment="Right" Text="250 мс"/>
+                        <Slider x:Name="DictationBufferSlider" Minimum="100" Maximum="500" TickFrequency="25"
+                                IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                ValueChanged="OnDictationBufferChanged"
+                                PreviewMouseLeftButtonUp="OnDictationTimingCommit"
+                                LostFocus="OnDictationTimingCommit"/>
+                    </DockPanel>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                               Text="Больше — меньше нагрузка на CPU, чуть дольше реакция."/>
+
+                    <DockPanel Margin="0,14,0,0" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="168"
+                                   FontSize="13.5" Opacity="0.9" Text="Обновление плашки"/>
+                        <TextBlock x:Name="DictationHudMsLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                   Margin="10,0,0,0" FontSize="13.5" MinWidth="48" TextAlignment="Right" Text="120 мс"/>
+                        <Slider x:Name="DictationHudMsSlider" Minimum="50" Maximum="400" TickFrequency="10"
+                                IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                ValueChanged="OnDictationHudMsChanged"
+                                PreviewMouseLeftButtonUp="OnDictationTimingCommit"
+                                LostFocus="OnDictationTimingCommit"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="0,14,0,0" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="168"
+                                   FontSize="13.5" Opacity="0.9" Text="Пауза перед вставкой"/>
+                        <TextBlock x:Name="DictationPasteDelayLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                   Margin="10,0,0,0" FontSize="13.5" MinWidth="48" TextAlignment="Right" Text="50 мс"/>
+                        <Slider x:Name="DictationPasteDelaySlider" Minimum="0" Maximum="300" TickFrequency="10"
+                                IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                ValueChanged="OnDictationPasteDelayChanged"
+                                PreviewMouseLeftButtonUp="OnDictationTimingCommit"
+                                LostFocus="OnDictationTimingCommit"/>
+                    </DockPanel>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                               Text="Если окно не успевает принять Ctrl+V — чуть увеличь паузу."/>
+
+                    <TextBlock Text="Диктофон" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Все настройки микрофона и эффектов: шестерёнка в окне записи на колесе."/>
+
+                    </StackPanel>
+
+                    <StackPanel x:Name="BehLook" Visibility="Collapsed">
+                    <TextBlock Text="Вид круга" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Пять дорогих обликов диска и орбиты. Меняется сразу — открой колесо колёсиком и смотри."/>
+                    <UniformGrid Columns="5" Margin="0,0,0,8" HorizontalAlignment="Left" Width="520">
+                        <Button x:Name="RingLook0" Content="Классика" Tag="0" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
+                        <Button x:Name="RingLook1" Content="Обсидиан" Tag="1" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
+                        <Button x:Name="RingLook2" Content="Шампань" Tag="2" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
+                        <Button x:Name="RingLook3" Content="Лёд" Tag="3" Margin="0,0,6,0" Padding="8,10" Click="OnRingLook"/>
+                        <Button x:Name="RingLook4" Content="Карбон" Tag="4" Margin="0,0,0,0" Padding="8,10" Click="OnRingLook"/>
+                    </UniformGrid>
+                    <TextBlock x:Name="RingLookHint" Margin="0,0,0,10" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Матовый графит, как сейчас. Чистый и спокойный."/>
+                    <Border Background="#FF1A1A1E" CornerRadius="14" Padding="10" HorizontalAlignment="Left" Width="280" Height="180">
+                        <Canvas x:Name="RingLookPreview" Width="260" Height="160" ClipToBounds="True"/>
+                    </Border>
+
+                    <TextBlock Text="Рамка-орнамент" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Опционально: PNG поверх диска. Пока рамка включена, вид выше почти не виден. Свои PNG без фона — в Assets\Skins."/>
+                    <ComboBox x:Name="RingSkinCombo" MinWidth="280" MaxWidth="480"
+                              HorizontalAlignment="Left"
+                              SelectionChanged="OnRingSkinSelectionChanged"/>
+
+                    <TextBlock Text="Перевод буфера" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Обычное копирование ничего не переводит. По умолчанию F10, или сектор «Перевод» на колесе, читает буфер и предлагает: по-русски или как есть. Если текст уже русский, перевода нет. Буфер меняется только после нажатия кнопки."/>
+                    <DockPanel LastChildFill="True">
+                        <Button x:Name="TranslateHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
+                                MinWidth="120" Margin="8,0,0,0" Click="OnTranslateHotkeyAssign"/>
+                        <ComboBox x:Name="TranslateHotkeyCombo" MinWidth="180" HorizontalAlignment="Left"
+                                  SelectionChanged="OnTranslateHotkeyChanged"/>
+                    </DockPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <ScrollViewer x:Name="PageShot" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel MaxWidth="560" HorizontalAlignment="Left">
+                    <TextBlock Text="Клавиша" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="По умолчанию F4 выделяет весь экран. Область можно двигать и менять размер. В этом режиме Ctrl+C копирует, Ctrl+S сохраняет на рабочий стол, Esc отменяет."/>
+                    <DockPanel LastChildFill="True">
+                        <Button x:Name="ShotHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
+                                MinWidth="120" Margin="8,0,0,0" Click="OnShotHotkeyAssign"/>
+                        <ComboBox x:Name="ShotHotkeyCombo" MinWidth="180" HorizontalAlignment="Left"
+                                  SelectionChanged="OnShotHotkeyChanged"/>
+                    </DockPanel>
+
+                    <TextBlock Text="Клип экрана" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Пишет монитор под курсором в mp4 на рабочий стол. Повтор клавиши или Esc останавливает раньше. Пока идёт запись, на экране ничего не показываем, чтобы это не попало в кадр."/>
+                    <DockPanel LastChildFill="True">
+                        <Button x:Name="ClipHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
+                                MinWidth="120" Margin="8,0,0,0" Click="OnClipHotkeyAssign"/>
+                        <ComboBox x:Name="ClipHotkeyCombo" MinWidth="180" HorizontalAlignment="Left"
+                                  SelectionChanged="OnClipHotkeyChanged"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,12,0,0" LastChildFill="False">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0"
+                                   FontSize="13.5" Opacity="0.9" Text="Длина"/>
+                        <ComboBox x:Name="ClipSecondsCombo" MinWidth="160" HorizontalAlignment="Left"
+                                  SelectionChanged="OnClipSecondsChanged"/>
+                    </DockPanel>
+
+                    <TextBlock Text="Что попадает в снимок" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <CheckBox x:Name="ShotNotifyBox" Margin="0,10,0,0" Click="OnShotNotifyClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Показывать уведомления о копировании и сохранении"/>
+                    <CheckBox x:Name="ShotRememberBox" Margin="0,8,0,0" Click="OnShotRememberClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Запоминать выделенную область"/>
+                    <TextBlock Margin="24,2,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                               Text="Следующий снимок откроет ту же рамку, а не весь экран."/>
+                    <CheckBox x:Name="ShotCursorBox" Margin="0,8,0,0" Click="OnShotCursorClick"
+                              Foreground="#FFF5F0E8" FontSize="13.5"
+                              Content="Сохранять курсор на скриншоте"/>
+
+                    <TextBlock Text="Файл" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Сохранение всегда на рабочий стол. Имя вида Zwmenu дата и время."/>
+                    <DockPanel Margin="0,0,0,0" LastChildFill="False">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0"
+                                   FontSize="13.5" Opacity="0.9" Text="Формат"/>
+                        <ComboBox x:Name="ShotFormatCombo" MinWidth="160" HorizontalAlignment="Left"
+                                  SelectionChanged="OnShotFormatChanged"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,12,0,0" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="72"
+                                   FontSize="13.5" Opacity="0.9" Text="Качество"/>
+                        <TextBlock x:Name="ShotQualityLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                   Margin="10,0,0,0" FontSize="13.5" MinWidth="28" TextAlignment="Right" Text="92"/>
+                        <Slider x:Name="ShotQualitySlider" Minimum="40" Maximum="100" TickFrequency="1"
+                                IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                ValueChanged="OnShotQualityChanged"
+                                PreviewMouseLeftButtonUp="OnShotQualityCommit"
+                                LostFocus="OnShotQualityCommit"/>
+                    </DockPanel>
+                    <TextBlock x:Name="ShotQualityHint" Margin="0,6,0,0" Opacity="0.55" FontSize="12"
+                               TextWrapping="Wrap" Text="PNG сохраняется без потерь. Качество нужно только для JPEG."/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid x:Name="PageShelf" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="460"/>
+                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,8,8">
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Вид" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,10" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Двенадцать видов. Выбранный описан снизу, справа живой пример."/>
+                                <UniformGrid Columns="3">
+                                    <Button x:Name="ShelfLayShelf" Tag="0" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Полка"/>
+                                    <Button x:Name="ShelfLayDock" Tag="1" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Док"/>
+                                    <Button x:Name="ShelfLayColumn" Tag="2" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Колонка"/>
+                                    <Button x:Name="ShelfLayGroups" Tag="3" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Группы"/>
+                                    <Button x:Name="ShelfLayRibbon" Tag="4" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Лента"/>
+                                    <Button x:Name="ShelfLayList" Tag="5" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Список"/>
+                                    <Button x:Name="ShelfLayRail" Tag="6" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Рельс"/>
+                                    <Button x:Name="ShelfLayPoster" Tag="7" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Плакаты"/>
+                                    <Button x:Name="ShelfLayChips" Tag="8" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Фишки"/>
+                                    <Button x:Name="ShelfLayIslands" Tag="9" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Острова"/>
+                                    <Button x:Name="ShelfLayTop" Tag="10" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Сверху"/>
+                                    <Button x:Name="ShelfLayCenter" Tag="11" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Центр"/>
+                                </UniformGrid>
+                                <TextBlock Text="Особые" Margin="0,12,0,6" FontSize="13.5" FontWeight="SemiBold" Opacity="0.8"/>
+                                <UniformGrid Columns="3">
+                                    <Button x:Name="ShelfLayCover" Tag="12" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Обложка"/>
+                                    <Button x:Name="ShelfLayCinema" Tag="13" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Кино"/>
+                                    <Button x:Name="ShelfLayFan" Tag="14" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Колода"/>
+                                    <Button x:Name="ShelfLayRing" Tag="15" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Кольцо"/>
+                                    <Button x:Name="ShelfLayThrone" Tag="16" Margin="3" Padding="6,8" Click="OnShelfLayout" Content="Трон"/>
+                                </UniformGrid>
+                                <TextBlock x:Name="ShelfLayoutHint" Margin="0,10,0,0" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Порядок" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,8" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Вручную порядок задаётся перетаскиванием на самой полке. Остальные режимы собирают файлы сами."/>
+                                <ComboBox x:Name="ShelfSortCombo" MinWidth="180" HorizontalAlignment="Left"
+                                          SelectionChanged="OnShelfSort"/>
+                                <TextBlock Margin="0,12,0,6" FontSize="13.5" Text="Очередь типов"/>
+                                <TextBlock Margin="0,0,0,8" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                                           Text="Сверху то, что первым. «Продолжения» это файлы с номером в имени, вроде «й (1)». Если двигать очередь, полка сама встаёт в «По типу»."/>
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Right" Margin="8,0,0,0">
+                                        <Button x:Name="ShelfKindUp" Content="Выше" MinWidth="84" Margin="0,0,0,6" Click="OnShelfKindUp"/>
+                                        <Button x:Name="ShelfKindDown" Content="Ниже" MinWidth="84" Click="OnShelfKindDown"/>
+                                    </StackPanel>
+                                    <ListBox x:Name="ShelfKindList" Height="168" Background="#FF161618" BorderBrush="#22F5F0E8"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Значки" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,12" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Размер, подпись и форма карточки."/>
+
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Размер"/>
+                                    <TextBlock x:Name="ShelfIconLabel" DockPanel.Dock="Right" Width="42" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="64"/>
+                                    <Slider x:Name="ShelfIconSlider" Minimum="32" Maximum="96" TickFrequency="2"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Просвет"/>
+                                    <TextBlock x:Name="ShelfGapLabel" DockPanel.Dock="Right" Width="42" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="8"/>
+                                    <Slider x:Name="ShelfGapSlider" Minimum="0" Maximum="32" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Скругление"/>
+                                    <TextBlock x:Name="ShelfRadiusLabel" DockPanel.Dock="Right" Width="42" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="16"/>
+                                    <Slider x:Name="ShelfRadiusSlider" Minimum="0" Maximum="36" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Подложка"/>
+                                    <TextBlock x:Name="ShelfPlateLabel" DockPanel.Dock="Right" Width="42" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="94"/>
+                                    <Slider x:Name="ShelfPlateSlider" Minimum="15" Maximum="100" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <CheckBox x:Name="ShelfNamesBox" Margin="0,10,0,0" Foreground="#FFF5F0E8" FontSize="13.5"
+                                          Content="Показывать имена" Click="OnShelfClick"/>
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Кегль имени"/>
+                                    <TextBlock x:Name="ShelfNameSizeLabel" DockPanel.Dock="Right" Width="42" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="12"/>
+                                    <Slider x:Name="ShelfNameSizeSlider" Minimum="9" Maximum="18" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Место на экране" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,12" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Сколько рядов видно, какой ширины полоса и где она стоит."/>
+
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Ширина"/>
+                                    <TextBlock x:Name="ShelfWidthLabel" DockPanel.Dock="Right" Width="48" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="100%"/>
+                                    <Slider x:Name="ShelfWidthSlider" Minimum="40" Maximum="100" TickFrequency="5"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="Рядов видно"/>
+                                    <TextBlock x:Name="ShelfRowsLabel" DockPanel.Dock="Right" Width="48" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="3"/>
+                                    <Slider x:Name="ShelfRowsSlider" Minimum="1" Maximum="6" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,10">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="В ряду"/>
+                                    <TextBlock x:Name="ShelfColumnsLabel" DockPanel.Dock="Right" Width="48" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="авто"/>
+                                    <Slider x:Name="ShelfColumnsSlider" Minimum="0" Maximum="24" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <TextBlock Margin="0,0,0,6" FontSize="13.5" Text="Выравнивание"/>
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <Button x:Name="ShelfAlignLeft" Tag="0" Content="Слева" Margin="0,0,4,0" Click="OnShelfAlign"/>
+                                    <Button x:Name="ShelfAlignCenter" Tag="1" Content="Центр" Margin="2,0,2,0" Click="OnShelfAlign"/>
+                                    <Button x:Name="ShelfAlignRight" Tag="2" Content="Справа" Margin="4,0,0,0" Click="OnShelfAlign"/>
+                                </UniformGrid>
+                                <CheckBox x:Name="ShelfBottomAuto" Foreground="#FFF5F0E8" FontSize="13.5"
+                                          Content="Отступ снизу сам" Click="OnShelfClick"/>
+                                <TextBlock Margin="22,2,0,6" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
+                                           Text="Один ряд стоит выше, чтобы не закрывать низ обоев. Сними галку, если нужен свой отступ."/>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="От низа"/>
+                                    <TextBlock x:Name="ShelfBottomLabel" DockPanel.Dock="Right" Width="48" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="0"/>
+                                    <Slider x:Name="ShelfBottomSlider" Minimum="0" Maximum="200" TickFrequency="2"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Если значков много" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,10" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Либо значки становятся меньше и всё видно сразу, либо полка листается."/>
+                                <UniformGrid Columns="3">
+                                    <Button x:Name="ShelfScrollFit" Tag="0" Content="Ужать" Margin="0,0,4,0" Click="OnShelfScroll"/>
+                                    <Button x:Name="ShelfScrollX" Tag="1" Content="Вбок" Margin="2,0,2,0" Click="OnShelfScroll"/>
+                                    <Button x:Name="ShelfScrollY" Tag="2" Content="Вниз" Margin="4,0,0,0" Click="OnShelfScroll"/>
+                                </UniformGrid>
+                                <TextBlock x:Name="ShelfScrollHint" Margin="0,8,0,0" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
+                                CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Отклик и поведение" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock Margin="0,2,0,12" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Наведение, игра и то, перекрывает ли полка окна."/>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Width="132" VerticalAlignment="Center" FontSize="13.5" Text="При наведении"/>
+                                    <TextBlock x:Name="ShelfHoverLabel" DockPanel.Dock="Right" Width="48" TextAlignment="Right"
+                                               VerticalAlignment="Center" FontSize="13.5" Text="120%"/>
+                                    <Slider x:Name="ShelfHoverSlider" Minimum="100" Maximum="160" TickFrequency="5"
+                                            IsSnapToTickEnabled="True" VerticalAlignment="Center" ValueChanged="OnShelfSlider"/>
+                                </DockPanel>
+                                <CheckBox x:Name="ShelfPressBox" Margin="0,4,0,0" Foreground="#FFF5F0E8" FontSize="13.5"
+                                          Content="Чуть вдавливать по нажатию" Click="OnShelfClick"/>
+                                <CheckBox x:Name="ShelfHideGameBox" Margin="0,8,0,0" Foreground="#FFF5F0E8" FontSize="13.5"
+                                          Content="Прятать, пока идёт игра" Click="OnShelfClick"/>
+                                <CheckBox x:Name="ShelfAboveBox" Margin="0,8,0,0" Foreground="#FFF5F0E8" FontSize="13.5"
+                                          Content="Поверх остальных окон" Click="OnShelfClick"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button x:Name="ShelfReset" Content="Вернуть вид как было" HorizontalAlignment="Left"
+                                Padding="14,8" Click="OnShelfReset"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border Grid.Column="2" Background="#FF14120F" BorderBrush="#33F5F0E8" BorderThickness="1"
+                        CornerRadius="14" Padding="16" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="Образец" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock Margin="0,2,0,10" Opacity="0.55" FontSize="12.5" TextWrapping="Wrap"
+                                   Text="Так карточки выглядят при текущих числах. Живая полка на рабочем столе меняется вместе с ними."/>
+                        <Border Background="#FF1C1412" CornerRadius="10" ClipToBounds="True" Height="250">
+                            <Viewbox Margin="12" Stretch="Uniform">
+                                <WrapPanel x:Name="ShelfPreview" Orientation="Horizontal"/>
+                            </Viewbox>
+                        </Border>
+                        <TextBlock x:Name="ShelfPreviewNote" Margin="0,10,0,0" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="FooterStatus" Opacity="0.75" FontSize="12.5" TextWrapping="Wrap"/>
+                <TextBlock x:Name="ConfigPathText" Opacity="0.4" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                           Text="{Binding ConfigPath, RelativeSource={RelativeSource AncestorType=Window}}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="RevealFileButton" Content="Показать файл" Margin="0,0,8,0" Click="OnReveal"/>
+                <Button Content="Сохранить" Style="{StaticResource PrimaryButton}" MinWidth="120" Click="OnSaveClick"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

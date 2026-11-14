@@ -1,0 +1,69 @@
+﻿<Window x:Class="Zwmenu.Workout.WorkoutAudioWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Zwmenu: аудио тренировки"
+        Width="760" Height="640"
+        MinWidth="640" MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        Background="#FF121214"
+        FontFamily="Segoe UI Variable Text, Segoe UI">
+    <DockPanel Margin="20">
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
+            <Button DockPanel.Dock="Right" Content="Сохранить" Padding="18,10" Click="OnSave"
+                    Background="#FF3E5E4A" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+            <Button DockPanel.Dock="Right" Content="Отмена" Margin="0,0,10,0" Padding="16,10" Click="OnCancel"
+                    Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+            <Button Content="Открыть папку фраз" Padding="14,10" Click="OnOpenFolder"
+                    Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Left"/>
+        </DockPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Свои файлы, без Windows Speech" FontSize="22" FontWeight="SemiBold" Foreground="#FFF5F0E8"/>
+                <TextBlock Margin="0,8,0,16" FontSize="13" Foreground="#A8F5F0E8" TextWrapping="Wrap"
+                           Text="Скачай mp3/wav с нужными фразами и укажи пути. Музыка тоже только твоя. Можно кинуть файлы в папку Phrases с именами start.mp3, set_done.mp3 и т.д."/>
+
+                <TextBlock Text="Мотивационный трек" FontWeight="SemiBold" Foreground="#99F5F0E8" Margin="0,0,0,6"/>
+                <DockPanel Margin="0,0,0,8">
+                    <Button DockPanel.Dock="Right" Content="Обзор…" Padding="12,8" Click="OnBrowseMusic"
+                            Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                    <TextBox x:Name="MusicPathBox" Margin="0,0,8,0" Padding="10,8"
+                             Background="#FF1A1A1E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,18">
+                    <TextBlock Text="Громкость музыки" VerticalAlignment="Center" Foreground="#99F5F0E8" Width="140"/>
+                    <TextBlock x:Name="VolLabel" DockPanel.Dock="Right" Width="40" Foreground="#FFF5F0E8" VerticalAlignment="Center"/>
+                    <Slider x:Name="VolSlider" Minimum="0.05" Maximum="1" Value="0.35" TickFrequency="0.05"
+                            IsSnapToTickEnabled="True" ValueChanged="OnVolChanged"/>
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,18">
+                    <TextBlock Text="Секунд на подход (если в упражнении нет «сек»)" VerticalAlignment="Center"
+                               Foreground="#99F5F0E8" TextWrapping="Wrap" Width="360"/>
+                    <TextBox x:Name="WorkSecBox" Width="70" Padding="10,8" HorizontalAlignment="Left"
+                             Background="#FF1A1A1E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8" Text="30"/>
+                </DockPanel>
+
+                
+                <TextBlock Text="Напоминание" FontWeight="SemiBold" Foreground="#99F5F0E8" Margin="0,8,0,8"/>
+                <CheckBox x:Name="ReminderEnabledBox" Content="Показывать напоминание вечером" Margin="0,0,0,10"
+                          Foreground="#FFF5F0E8" IsChecked="True"/>
+                <DockPanel Margin="0,0,0,10">
+                    <TextBlock Text="Время (час:мин)" VerticalAlignment="Center" Foreground="#99F5F0E8" Width="160"/>
+                    <TextBox x:Name="ReminderHourBox" Width="50" Margin="0,0,6,0" Padding="8,6"
+                             Background="#FF1A1A1E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8" Text="20"/>
+                    <TextBlock Text=":" VerticalAlignment="Center" Foreground="#FFF5F0E8" Margin="0,0,6,0"/>
+                    <TextBox x:Name="ReminderMinuteBox" Width="50" Padding="8,6"
+                             Background="#FF1A1A1E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8" Text="00"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,18">
+                    <TextBlock Text="Случайный сдвиг ± минут" VerticalAlignment="Center" Foreground="#99F5F0E8" Width="200"/>
+                    <TextBox x:Name="ReminderJitterBox" Width="50" Padding="8,6"
+                             Background="#FF1A1A1E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8" Text="30"/>
+                </DockPanel>
+                <TextBlock Text="Фразы" FontWeight="SemiBold" Foreground="#99F5F0E8" Margin="0,0,0,8"/>
+                <StackPanel x:Name="PhrasesHost"/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

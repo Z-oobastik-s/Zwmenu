@@ -1,0 +1,31 @@
+# Сборка. Её заново делает dotnet, в репозиторий она не нужна.
+[Bb]in/
+[Oo]bj/
+publish/
+dist/
+*.user
+*.suo
+*.userosscache
+*.nupkg
+*.pdb
+*.log
+
+# Компилятор установщика и портативный Git. Это инструменты, не программа.
+tools/
+.tools/
+
+# Старый отдельный проект, не Zwmenu.
+Action-Wheel-main/
+
+# Снимки экрана с отладки.
+shot/
+
+# Секрет для push.bat. В репозиторий не попадает.
+.github-token
+
+# Среда.
+.vs/
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini

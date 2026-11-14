@@ -1,0 +1,254 @@
+<Window x:Class="Zwmenu.Workout.WorkoutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Zwmenu: план тренировок"
+        WindowState="Maximized"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="#FF121214"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        KeyDown="OnWindowKeyDown">
+    <Grid Margin="28,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                <Button Content="Аудио…" Margin="0,0,8,0" Padding="14,8" Click="OnAudioSettings"
+                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                <Button Content="Закрыть (Esc)" Padding="16,8" Click="OnClose"
+                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+            </StackPanel>
+            <StackPanel>
+                <TextBlock Text="Домашний план" FontSize="30" FontWeight="SemiBold" Foreground="#FFF5F0E8"/>
+                <TextBlock x:Name="ProfileText" Margin="0,6,0,0" FontSize="13" TextWrapping="Wrap"
+                           Foreground="#A8F5F0E8"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TextBlock x:Name="VoiceStatus" Grid.Row="1" Margin="0,0,0,4" FontSize="13"
+                   Foreground="#FFA8C5A0" TextWrapping="Wrap" Text="Голос: …"/>
+        <TextBlock x:Name="MusicStatus" Grid.Row="2" Margin="0,0,0,10" FontSize="12.5"
+                   Foreground="#99F5F0E8" TextWrapping="Wrap" Text="Музыка: …"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button x:Name="ModePlanBtn" Content="План" Margin="0,0,8,0" Padding="16,10" Click="OnModePlan"
+                    Background="#883E5E4A" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="14"/>
+            <Button x:Name="ModeVideoBtn" Content="Видео" Margin="0,0,16,0" Padding="16,10" Click="OnModeVideo"
+                    Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="14"/>
+            <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel x:Name="DayTabs" Orientation="Horizontal"/>
+                    <TextBlock x:Name="DayGoalText" Margin="16,8,0,0" FontSize="13"
+                               Foreground="#FFA8C5A0" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </StackPanel>
+            </ScrollViewer>
+        </StackPanel>
+
+        <!-- План -->
+        <Grid x:Name="PlanHost" Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="18"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="#F018181A" CornerRadius="14" Padding="12"
+                    BorderBrush="#33F5F0E8" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Упражнения дня" FontWeight="SemiBold"
+                               Foreground="#99F5F0E8" Margin="6,4,6,10" FontSize="14"/>
+                    <ListBox x:Name="ExerciseList" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                             SelectionChanged="OnExerciseSelected">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="12,12"/>
+                                <Setter Property="Margin" Value="0,0,0,6"/>
+                                <Setter Property="Foreground" Value="#FFF5F0E8"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="#22F5F0E8" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#44F5F0E8"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#553E5E4A"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Background="#F018181A" CornerRadius="14" Padding="22"
+                    BorderBrush="#33F5F0E8" BorderThickness="1">
+                <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <Border x:Name="WorkPanel" Visibility="Collapsed" Margin="0,0,0,16"
+                                Background="#554A3E5E" CornerRadius="12" Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="Работа: делай подход" FontSize="14" Foreground="#99F5F0E8"/>
+                                <TextBlock x:Name="WorkTimerText" FontSize="48" FontWeight="SemiBold"
+                                           Foreground="#FFF5F0E8" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="WorkHint" FontSize="13" Foreground="#B8F5F0E8"
+                                           TextWrapping="Wrap" Margin="0,4,0,0"
+                                           Text="Скажи «выполнил», когда закончил."/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="RestPanel" Visibility="Collapsed" Margin="0,0,0,16"
+                                Background="#553E5E4A" CornerRadius="12" Padding="18">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Пропустить" Padding="14,10" Margin="12,0,0,0"
+                                        Click="OnSkipRestClick" Background="#33F5F0E8" Foreground="#FFF5F0E8"
+                                        BorderThickness="0" Cursor="Hand" VerticalAlignment="Center"/>
+                                <StackPanel>
+                                    <TextBlock Text="Отдых после подхода" FontSize="14" Foreground="#99F5F0E8"/>
+                                    <TextBlock x:Name="RestTimerText" FontSize="48" FontWeight="SemiBold"
+                                               Foreground="#FFF5F0E8" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="RestHint" FontSize="13" Foreground="#B8F5F0E8"
+                                               TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <TextBlock Text="Как выглядит (2–3 кадра)" Margin="0,0,0,8" FontWeight="SemiBold" Foreground="#99F5F0E8" FontSize="15"/>
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,14">
+                            <StackPanel x:Name="PoseGallery" Orientation="Horizontal"/>
+                        </ScrollViewer>
+                        <StackPanel Margin="0,0,0,16">
+                            <TextBlock x:Name="ExTitle" FontSize="28" FontWeight="SemiBold" Foreground="#FFF5F0E8" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="ExMeta" Margin="0,10,0,0" FontSize="16" Foreground="#FFA8C5A0" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="ExWhy" Margin="0,14,0,0" FontSize="15" Foreground="#B8F5F0E8" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <TextBlock Text="Как делать по шагам" Margin="0,0,0,8" FontWeight="SemiBold" Foreground="#99F5F0E8" FontSize="15"/>
+                        <StackPanel x:Name="StepsPanel"/>
+                        <TextBlock Text="Типичные ошибки" Margin="0,18,0,8" FontWeight="SemiBold" Foreground="#99F5F0E8" FontSize="15"/>
+                        <StackPanel x:Name="MistakesPanel"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
+                            <Button Content="Начать подход" Margin="0,0,10,0" Padding="18,12" Click="OnStartSet"
+                                    Background="#FF4A5E3E" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="15"/>
+                            <Button x:Name="DoneBtn" Content="Отметить выполненным" Padding="18,12" Click="OnDoneSet"
+                                    Background="#FF3E5E4A" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="15"/>
+                        </StackPanel>
+                        <TextBlock x:Name="DoneStatus" Margin="0,12,0,0" FontSize="14" Foreground="#99F5F0E8" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Видео: почти весь экран -->
+        <Grid x:Name="VideoHost" Grid.Row="0" Grid.RowSpan="6" Visibility="Collapsed" Background="#FF0A0A0C" Panel.ZIndex="20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="VideoListCol" Width="200"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="#F0121214" BorderBrush="#33F5F0E8" BorderThickness="0,0,1,0" Padding="10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Button Content="← План" Padding="12,8" Margin="0,0,0,10" Click="OnModePlan"
+                                Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                        <TextBlock Text="Ролики" FontWeight="SemiBold" Foreground="#99F5F0E8" FontSize="14"/>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" x:Name="VideoFolderHint" Margin="0,8,0,0" FontSize="11"
+                               Foreground="#66F5F0E8" TextWrapping="Wrap" Text=""/>
+                    <ListBox x:Name="VideoList" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                             SelectionChanged="OnVideoSelected">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="10,10"/>
+                                <Setter Property="Margin" Value="0,0,0,4"/>
+                                <Setter Property="Foreground" Value="#FFF5F0E8"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="#22F5F0E8" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#44F5F0E8"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#553E5E4A"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <DockPanel Grid.Column="1" LastChildFill="True">
+                <Border DockPanel.Dock="Bottom" Background="#FF121214" Padding="14,12,14,14"
+                        BorderBrush="#22F5F0E8" BorderThickness="0,1,0,0">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                            <Button Content="Список" Padding="12,8" Margin="0,0,8,0" Click="OnToggleVideoList"
+                                    Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                            <Button Content="Закрыть" Padding="12,8" Click="OnClose"
+                                    Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock x:Name="VideoTitle" FontSize="16" FontWeight="SemiBold" Foreground="#FFF5F0E8" TextWrapping="Wrap"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="◀" Width="48" Padding="0,8" Margin="0,0,6,0" Click="OnVideoPrev"
+                                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="16"/>
+                                <Button x:Name="VideoPlayBtn" Content="Пауза" Padding="16,8" Margin="0,0,6,0" Click="OnVideoPlayPause"
+                                        Background="#FF3E5E4A" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="▶" Width="48" Padding="0,8" Margin="0,0,6,0" Click="OnVideoNext"
+                                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand" FontSize="16"/>
+                                <Button Content="Сначала" Padding="12,8" Margin="0,0,14,0" Click="OnVideoRestart"
+                                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                                <Button x:Name="VideoMuteBtn" Content="Звук" Padding="12,8" Margin="0,0,8,0" Click="OnVideoMute"
+                                        Background="#33F5F0E8" Foreground="#FFF5F0E8" BorderThickness="0" Cursor="Hand"/>
+                                <TextBlock Text="Громкость" VerticalAlignment="Center" Foreground="#99F5F0E8" Margin="0,0,8,0"/>
+                                <Slider x:Name="VideoVolumeSlider" Width="180" Minimum="0" Maximum="1"
+                                        Value="0.8" VerticalAlignment="Center"
+                                        ValueChanged="OnVideoVolumeChanged"/>
+                                <TextBlock x:Name="VideoVolumeLabel" Width="40" Margin="8,0,0,0"
+                                           VerticalAlignment="Center" Foreground="#FFF5F0E8" Text="80%"/>
+                            </StackPanel>
+                            <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="#88F5F0E8"
+                                       Text="← → листать · Пробел пауза · ↑↓ громкость · L список · Esc закрыть"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+                <Border Background="#FF000000" ClipToBounds="True">
+                    <MediaElement x:Name="VideoPlayer"
+                                  LoadedBehavior="Manual"
+                                  UnloadedBehavior="Stop"
+                                  Stretch="Uniform"
+                                  ScrubbingEnabled="True"
+                                  MediaEnded="OnVideoEnded"/>
+                </Border>
+            </DockPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="5" Margin="0,14,0,0" FontSize="12" Foreground="#66F5F0E8" TextWrapping="Wrap"
+                   Text="Полный экран. Esc: закрыть. План: «начать» / «выполнил». Видео: ← → и голос «вперёд» / «назад»."/>
+    </Grid>
+</Window>
