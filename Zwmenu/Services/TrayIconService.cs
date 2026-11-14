@@ -33,6 +33,7 @@ public sealed class TrayIconService: IDisposable
         menu.Items.Add("Настроить два экрана", null, (_, _) => EdgeShareWindow.ShowCurrent());
         menu.Items.Add("Шаблоны", null, (_, _) => SnippetWindow.ShowCurrent());
         menu.Items.Add("Настройки колеса", null, (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("Проверить обновление", null, (_, _) => AppUpdate.CheckSoon(manual: true));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Выход", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
 

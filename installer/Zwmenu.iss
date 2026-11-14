@@ -3,7 +3,7 @@
 ; Настройки остаются в %LOCALAPPDATA%\Zwmenu и при переустановке не затираются.
 
 #define MyAppName "Zwmenu"
-#define MyAppVersion "1.3.35"
+#define MyAppVersion "1.3.36"
 #define MyAppExeName "Zwmenu.exe"
 #define PublishDir "..\publish\win-x64"
 
@@ -29,7 +29,7 @@ CloseApplications=force
 RestartApplications=no
 VersionInfoProductName=Zwmenu
 VersionInfoDescription=Установщик Zwmenu
-VersionInfoVersion=1.3.35.0
+VersionInfoVersion=1.3.36.0
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -77,4 +77,13 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Zwmenu');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  { Тихий запуск из автообновления. Обычный мастер сам спрашивает, открывать ли программу. }
+  if (CurStep = ssDone) and WizardSilent then
+    Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', '', SW_SHOW, ewNoWait, ResultCode);
 end;

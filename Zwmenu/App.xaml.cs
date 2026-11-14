@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Windows;
+using System.Windows.Threading;
 using Zwmenu.Overlay;
 using Zwmenu.Services;
 using Zwmenu.Settings;
@@ -35,6 +36,7 @@ public partial class App: Application
                 FileLock.SelfCheck();
                 FolderConsole.SelfCheck();
                 BackgroundRemoveService.SelfCheck();
+                AppUpdate.SelfCheck();
                 WorkshopWindow.Smoke();
                 File.WriteAllText(report, "ok");
                 Environment.Exit(0);
@@ -102,6 +104,14 @@ public partial class App: Application
         };
         EdgeShareService.Shared.Start();
         StayAwake.Start();
+        UpdateWindow.ExitForUpdate = () => ExitApp();
+        var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
+        updateTimer.Tick += (_, _) =>
+        {
+            updateTimer.Stop();
+            AppUpdate.CheckSoon(manual: false);
+        };
+        updateTimer.Start();
     }
 
     private void ShowPathFix(ActionProblem problem)
