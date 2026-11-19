@@ -50,7 +50,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-Старые установщики и обрывки загрузок удаляются сами. В памяти не остаётся снимок после закрытия окна.
+Меню значка своё: снимки можно посмотреть, шпаргалка по жестам вместо длинной подсказки.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta

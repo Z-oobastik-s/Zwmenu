@@ -1,0 +1,10 @@
+---
+description: В окнах Zwmenu не показывать стандартную полосу прокрутки
+alwaysApply: true
+---
+
+# Без видимой полосы прокрутки
+
+В Zwmenu нет стандартной серой полосы прокрутки WPF. Её не добавлять: ни `ScrollBarVisibility.Auto`, ни `Visible`, ни скроллбар с оформлением по умолчанию.
+
+Если содержимое длиннее окна, его крутят колёсиком, а полосу прячут: `ScrollBarVisibility.Hidden` и схлопнутый `ScrollBar`, как `TrayPaint.HiddenScroll`, `RadialMenuWindow.MakeHiddenScroll` и `MusicWindow.KillScrollBars`.
