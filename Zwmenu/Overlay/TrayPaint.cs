@@ -77,26 +77,34 @@ static class TrayPaint
         return scroll;
     }
 
+    /// <summary>Сколько места по высоте между краем экрана и панелью задач.</summary>
+    public static double Room(int pixelX, int pixelY)
+    {
+        var limit = Limits(pixelX, pixelY);
+        return Math.Max(320, (limit.Bottom - limit.Top) / limit.Scale - 52);
+    }
+
     /// <summary>Нижний или верхний угол той стороны, где значок. Не посреди экрана.</summary>
     public static void PlaceInCorner(Window window, int pixelX, int pixelY)
     {
-        double scale = Math.Max(1, ScaleAt(pixelX, pixelY));
+        var limit = Limits(pixelX, pixelY);
+        double room = Math.Max(320, (limit.Bottom - limit.Top) / limit.Scale - 52);
+        if (window.MaxHeight > room)
+            window.MaxHeight = room;
         window.UpdateLayout();
         double width = window.ActualWidth > 1 ? window.ActualWidth : window.Width;
         double height = window.ActualHeight > 1 ? window.ActualHeight : 240;
-        var area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(pixelX, pixelY)).WorkingArea;
-        int bottomPx = area.Bottom;
-        IntPtr tray = FindWindow("Shell_TrayWnd", null);
-        if (tray != IntPtr.Zero && GetWindowRect(tray, out WinRect trayRect)
-            && trayRect.Top > area.Top + 80 && trayRect.Top < area.Bottom)
-            bottomPx = Math.Min(bottomPx, trayRect.Top);
+        double scale = limit.Scale;
+        var area = limit.Area;
+        int bottomPx = limit.Bottom;
         const double margin = 12;
-        double minLeft = area.Left / scale + margin;
-        double maxLeft = area.Right / scale - width - margin;
-        double minTop = area.Top / scale + margin;
-        double maxTop = bottomPx / scale - height - margin;
+        const double tipGap = 40;
         bool toRight = pixelX >= area.Left + area.Width / 2.0;
         bool toBottom = pixelY >= area.Top + area.Height / 2.0;
+        double minLeft = area.Left / scale + margin;
+        double maxLeft = area.Right / scale - width - margin;
+        double minTop = area.Top / scale + (toBottom ? margin : tipGap);
+        double maxTop = bottomPx / scale - height - (toBottom ? tipGap : margin);
         double left = toRight ? maxLeft : minLeft;
         double top = toBottom ? maxTop : minTop;
         if (left < minLeft)
@@ -105,6 +113,43 @@ static class TrayPaint
             top = minTop;
         window.Left = left;
         window.Top = top;
+    }
+
+    readonly struct ScreenLimit
+    {
+        public ScreenLimit(double scale, System.Drawing.Rectangle area, int bottom)
+        {
+            Scale = scale;
+            Area = area;
+            Top = area.Top;
+            Bottom = bottom;
+        }
+
+        public double Scale { get; }
+        public System.Drawing.Rectangle Area { get; }
+        public int Top { get; }
+        public int Bottom { get; }
+    }
+
+    static ScreenLimit Limits(int pixelX, int pixelY)
+    {
+        double scale = Math.Max(1, ScaleAt(pixelX, pixelY));
+        var area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(pixelX, pixelY)).WorkingArea;
+        int bottomPx = area.Bottom;
+        IntPtr tray = FindWindow("Shell_TrayWnd", null);
+        if (tray != IntPtr.Zero && GetWindowRect(tray, out WinRect trayRect))
+        {
+            int screenBottom = GetSystemMetrics(1);
+            int trayTop = trayRect.Top;
+            int trayHeight = trayRect.Bottom - trayRect.Top;
+            if (trayHeight < 28 || trayHeight > 120)
+                trayHeight = 40;
+            if (trayTop > screenBottom - 48)
+                trayTop = screenBottom - trayHeight;
+            if (trayTop > area.Top + 80)
+                bottomPx = Math.Min(bottomPx, trayTop);
+        }
+        return new ScreenLimit(scale, area, bottomPx);
     }
 
     public static bool ContainsPoint(Window window, int pixelX, int pixelY)
@@ -131,6 +176,9 @@ static class TrayPaint
 
     [DllImport("user32.dll")]
     static extern bool GetWindowRect(IntPtr hwnd, out WinRect rect);
+
+    [DllImport("user32.dll")]
+    static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll")]
     static extern IntPtr MonitorFromPoint(PointI point, uint flags);

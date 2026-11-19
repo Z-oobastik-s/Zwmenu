@@ -18,7 +18,9 @@ public sealed class TrayIconService : IDisposable
     int _anchorY;
     int _clipPhase;
     bool _leftPending;
+    bool _tipHeld;
     bool _disposed;
+    static TrayIconService? _live;
 
     public event EventHandler? ShowRequested;
     public event EventHandler? SettingsRequested;
@@ -26,6 +28,7 @@ public sealed class TrayIconService : IDisposable
 
     public TrayIconService()
     {
+        _live = this;
         _status = () => ShowRequested?.Invoke(this, EventArgs.Empty);
         _settings = () => SettingsRequested?.Invoke(this, EventArgs.Empty);
         _exit = () => ExitRequested?.Invoke(this, EventArgs.Empty);
@@ -77,17 +80,44 @@ public sealed class TrayIconService : IDisposable
 
     public void Show() => _icon.Visible = true;
 
+    public static void HoldTip()
+    {
+        var live = _live;
+        if (live == null || live._disposed)
+            return;
+        live._tipHeld = true;
+        live.ApplyTip();
+    }
+
+    public static void ReleaseTip()
+    {
+        var live = _live;
+        if (live == null || live._disposed)
+            return;
+        if (GuideWindow.IsShown || TrayMenuWindow.IsOpen)
+            return;
+        live._tipHeld = false;
+        live.ApplyTip();
+    }
+
     public void SetClipPhase(int phase)
     {
         _clipPhase = phase;
+        ApplyTip();
+    }
+
+    void ApplyTip()
+    {
         try
         {
-            _icon.Text = phase switch
-            {
-                2 => "Zwmenu: идёт запись, Esc: стоп",
-                1 => "Zwmenu: готовлю запись",
-                _ => "Zwmenu"
-            };
+            _icon.Text = _tipHeld
+                ? ""
+                : _clipPhase switch
+                {
+                    2 => "Zwmenu: идёт запись, Esc: стоп",
+                    1 => "Zwmenu: готовлю запись",
+                    _ => "Zwmenu"
+                };
         }
         catch
         {
@@ -118,8 +148,11 @@ public sealed class TrayIconService : IDisposable
         if (GuideWindow.IsShown && !NearAnchor() && !GuideWindow.PointerInside())
             GuideWindow.CloseGuide();
 
-        if (!GuideWindow.IsShown && !_leftPending && !NearAnchor())
+        if (!GuideWindow.IsShown && !TrayMenuWindow.IsOpen && !_leftPending && !NearAnchor())
+        {
             _watch.Stop();
+            ReleaseTip();
+        }
     }
 
     void NoteCursor()
@@ -128,6 +161,7 @@ public sealed class TrayIconService : IDisposable
         _anchorX = point.X;
         _anchorY = point.Y;
         _seen = Environment.TickCount64;
+        HoldTip();
         if (!_watch.IsEnabled)
             _watch.Start();
     }
@@ -173,6 +207,8 @@ public sealed class TrayIconService : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        if (ReferenceEquals(_live, this))
+            _live = null;
         _watch.Stop();
         TrayMenuWindow.StatusRequested -= _status;
         TrayMenuWindow.SettingsRequested -= _settings;

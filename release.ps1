@@ -50,7 +50,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-Памятка у кубика в трее написана обычными словами: где кнопка и что она делает.
+Меню значка: голос открывается отдельным листом, все тембры видны. Подсказка трея не закрывает окно.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta

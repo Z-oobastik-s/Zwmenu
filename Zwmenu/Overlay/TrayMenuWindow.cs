@@ -15,7 +15,10 @@ public sealed class TrayMenuWindow : Window
     public static event Action? ExitRequested;
 
     static TrayMenuWindow? _open;
-    readonly StackPanel _voice = new() { Visibility = Visibility.Collapsed };
+    readonly StackPanel _main = new();
+    readonly StackPanel _voicePage = new() { Visibility = Visibility.Collapsed, Width = 480 };
+    int _ax;
+    int _ay;
     long _shownAt;
     bool _inside;
     bool _ready;
@@ -30,7 +33,7 @@ public sealed class TrayMenuWindow : Window
         ResizeMode = ResizeMode.NoResize;
         Width = 332;
         SizeToContent = SizeToContent.Height;
-        MaxHeight = 760;
+        MaxHeight = 900;
         FontFamily = new FontFamily("Segoe UI");
         ShowActivated = true;
         MouseEnter += (_, _) => _inside = true;
@@ -49,42 +52,31 @@ public sealed class TrayMenuWindow : Window
                 CloseMenu();
         };
 
-        var body = new StackPanel();
-        body.Children.Add(Head(clipPhase));
-        body.Children.Add(Shots());
-        body.Children.Add(Rule());
-        body.Children.Add(Row("Открыть статус", () => { CloseMenu(); StatusRequested?.Invoke(); }));
-        body.Children.Add(Row("Просмотр фото", () => { CloseMenu(); PhotoWindow.PickAndShow(); }));
-        body.Children.Add(Row("Просмотр видео", () => { CloseMenu(); VideoWindow.PickAndShow(); }));
-        body.Children.Add(Row("Музыка", () => { CloseMenu(); MusicWindow.PickAndShow(); }));
-        body.Children.Add(EdgeRow());
-        body.Children.Add(Row("Настроить два экрана", () => { CloseMenu(); EdgeShareWindow.ShowCurrent(); }));
-        body.Children.Add(Row("Шаблоны", () => { CloseMenu(); SnippetWindow.ShowCurrent(); }));
-        body.Children.Add(VoiceRow());
-        body.Children.Add(_voice);
-        body.Children.Add(Row("Настройки колеса", () => { CloseMenu(); SettingsRequested?.Invoke(); }));
-        body.Children.Add(Row("Проверить обновление", () => { CloseMenu(); AppUpdate.CheckSoon(manual: true); }));
-        body.Children.Add(Rule());
-        body.Children.Add(Row("Как это работает", () =>
+        _main.Children.Add(Head(clipPhase));
+        _main.Children.Add(Shots());
+        _main.Children.Add(Rule());
+        _main.Children.Add(Row("Открыть статус", () => { CloseMenu(); StatusRequested?.Invoke(); }));
+        _main.Children.Add(Row("Просмотр фото", () => { CloseMenu(); PhotoWindow.PickAndShow(); }));
+        _main.Children.Add(Row("Просмотр видео", () => { CloseMenu(); VideoWindow.PickAndShow(); }));
+        _main.Children.Add(Row("Музыка", () => { CloseMenu(); MusicWindow.PickAndShow(); }));
+        _main.Children.Add(EdgeRow());
+        _main.Children.Add(Row("Настроить два экрана", () => { CloseMenu(); EdgeShareWindow.ShowCurrent(); }));
+        _main.Children.Add(Row("Шаблоны", () => { CloseMenu(); SnippetWindow.ShowCurrent(); }));
+        _main.Children.Add(Row("Голос", ShowVoice));
+        _main.Children.Add(Row("Настройки колеса", () => { CloseMenu(); SettingsRequested?.Invoke(); }));
+        _main.Children.Add(Row("Проверить обновление", () => { CloseMenu(); AppUpdate.CheckSoon(manual: true); }));
+        _main.Children.Add(Rule());
+        _main.Children.Add(Row("Как это работает", () =>
         {
             var point = System.Windows.Forms.Cursor.Position;
             CloseMenu();
             GuideWindow.ShowNear(point.X, point.Y);
         }));
-        body.Children.Add(Row("Выход", () => { CloseMenu(); ExitRequested?.Invoke(); }, leave: true));
+        _main.Children.Add(Row("Выход", () => { CloseMenu(); ExitRequested?.Invoke(); }, leave: true));
 
-        double max = 640;
-        try
-        {
-            var area = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
-            max = Math.Max(360, area.Height / TrayPaint.Scale() - 24);
-        }
-        catch
-        {
-            // оставляем запасную высоту
-        }
-
-        MaxHeight = max;
+        var pages = new Grid();
+        pages.Children.Add(_main);
+        pages.Children.Add(_voicePage);
         Content = new Border
         {
             Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13)),
@@ -93,7 +85,7 @@ public sealed class TrayMenuWindow : Window
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(8, 8, 8, 8),
             Effect = TrayPaint.Shadow(),
-            Child = Limit(TrayPaint.HiddenScroll(body), max - 20)
+            Child = pages
         };
         FillVoice();
     }
@@ -113,10 +105,13 @@ public sealed class TrayMenuWindow : Window
         CloseMenu();
         var menu = new TrayMenuWindow(clipPhase);
         _open = menu;
+        menu._ax = x;
+        menu._ay = y;
         menu.Left = -4000;
         menu.Top = -4000;
         menu.Show();
-        TrayPaint.PlaceInCorner(menu, x, y);
+        menu.Fit();
+        TrayIconService.HoldTip();
         menu._shownAt = Environment.TickCount64;
         menu._ready = true;
         menu.Activate();
@@ -132,6 +127,7 @@ public sealed class TrayMenuWindow : Window
             return;
         TrayDismiss.Disarm(menu);
         try { menu.Close(); } catch { /* уже закрыто */ }
+        TrayIconService.ReleaseTip();
     }
 
     public static bool IsOpen => _open is { IsVisible: true };
@@ -139,10 +135,26 @@ public sealed class TrayMenuWindow : Window
     bool Holds(System.Drawing.Point cursor) =>
         _inside || ShotPeek.PointerInside() || TrayPaint.ContainsPoint(this, cursor.X, cursor.Y);
 
-    static ScrollViewer Limit(ScrollViewer scroll, double height)
+    void Fit()
     {
-        scroll.MaxHeight = height;
-        return scroll;
+        UpdateLayout();
+        TrayPaint.PlaceInCorner(this, _ax, _ay);
+    }
+
+    void ShowVoice()
+    {
+        _main.Visibility = Visibility.Collapsed;
+        _voicePage.Visibility = Visibility.Visible;
+        Width = 496;
+        Fit();
+    }
+
+    void ShowList()
+    {
+        _voicePage.Visibility = Visibility.Collapsed;
+        _main.Visibility = Visibility.Visible;
+        Width = 332;
+        Fit();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -307,23 +319,47 @@ public sealed class TrayMenuWindow : Window
         });
     }
 
-    UIElement VoiceRow() => Row("Голос", () =>
-    {
-        _voice.Visibility = _voice.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-    });
-
     void FillVoice()
     {
-        _voice.Margin = new Thickness(8, 0, 8, 6);
-        _voice.Children.Add(Link("Открыть настройки", () => { CloseMenu(); VoiceShiftWindow.ShowCurrent(); }));
+        var head = new Grid { Margin = new Thickness(8, 4, 8, 2) };
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.Children.Add(new StackPanel
+        {
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Голос",
+                    Foreground = TrayPaint.Brush(TemplateTheme.Fg),
+                    FontSize = 16,
+                    FontWeight = FontWeights.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = "Тембр микрофона. Нажатие сразу включает.",
+                    Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
+                    FontSize = 12,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            }
+        });
+        var back = Row("К меню", ShowList);
+        back.Padding = new Thickness(8, 6, 8, 6);
+        back.VerticalAlignment = System.Windows.VerticalAlignment.Center;
+        Grid.SetColumn(back, 1);
+        head.Children.Add(back);
+        _voicePage.Children.Add(head);
+        _voicePage.Children.Add(Row("Открыть настройки", () => { CloseMenu(); VoiceShiftWindow.ShowCurrent(); }));
         string toggle = VoiceShiftLive.Shared.Running ? "Выключить отдачу" : "Включить отдачу";
-        _voice.Children.Add(Link(toggle, () =>
+        _voicePage.Children.Add(Row(toggle, () =>
         {
             VoiceShiftLive.Shared.ToggleSaved();
             CloseMenu();
         }));
         bool hear = ScreenshotStore.Current.VoiceShiftHear;
-        _voice.Children.Add(Link(hear ? "Не слышать себя" : "Слышать себя", () =>
+        _voicePage.Children.Add(Row(hear ? "Не слышать себя" : "Слышать себя", () =>
         {
             VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
             CloseMenu();
@@ -335,7 +371,7 @@ public sealed class TrayMenuWindow : Window
 
     void AddVoiceGroup(string title, Func<VoiceColor, bool> take)
     {
-        var wrap = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
+        var wrap = new WrapPanel { ItemWidth = 160, ItemHeight = 34, Margin = new Thickness(0, 0, 0, 2) };
         int current = VoiceShift.Shared.Preset;
         bool any = false;
         for (int i = 0; i < VoiceColor.All.Count; i++)
@@ -345,55 +381,48 @@ public sealed class TrayMenuWindow : Window
             any = true;
             int index = i;
             bool on = i == current;
-            var pill = new Border
+            var idle = TrayPaint.Brush(on ? Color.FromRgb(0x1A, 0x2E, 0x2A) : Color.FromRgb(0x1C, 0x1E, 0x22));
+            var hot = TrayPaint.Brush(on ? Color.FromRgb(0x24, 0x3C, 0x36) : Color.FromRgb(0x2A, 0x2C, 0x32));
+            var chip = new Border
             {
-                Background = TrayPaint.Brush(on ? Color.FromRgb(0x1A, 0x2E, 0x2A) : Color.FromRgb(0x22, 0x23, 0x26)),
-                BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : Color.FromRgb(0x2E, 0x30, 0x34)),
+                Background = idle,
+                BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : Color.FromRgb(0x32, 0x34, 0x38)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(0, 0, 4, 4),
+                Margin = new Thickness(3, 2, 3, 2),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+                VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
                 Cursor = Cursors.Hand,
                 Child = new TextBlock
                 {
                     Text = VoiceColor.All[i].Title,
                     Foreground = TrayPaint.Brush(on ? TemplateTheme.AccentText : TemplateTheme.Fg),
-                    FontSize = 11.5
+                    FontSize = 12.5,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis
                 }
             };
-            pill.MouseLeftButtonUp += (_, _) =>
+            chip.MouseEnter += (_, _) => chip.Background = hot;
+            chip.MouseLeave += (_, _) => chip.Background = idle;
+            chip.MouseLeftButtonUp += (_, _) =>
             {
                 VoiceShift.Shared.ApplyPreset(index);
                 CloseMenu();
             };
-            wrap.Children.Add(pill);
+            wrap.Children.Add(chip);
         }
 
         if (!any)
             return;
-        _voice.Children.Add(new TextBlock
+        _voicePage.Children.Add(new TextBlock
         {
             Text = title,
             Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
-            FontSize = 11,
-            Margin = new Thickness(0, 6, 0, 3)
+            FontSize = 11.5,
+            Margin = new Thickness(8, 8, 8, 2)
         });
-        _voice.Children.Add(wrap);
-    }
-
-    static Border Link(string text, Action click)
-    {
-        var block = new TextBlock
-        {
-            Text = text,
-            Foreground = TrayPaint.Brush(TemplateTheme.AccentText),
-            FontSize = 12.5,
-            Margin = new Thickness(0, 2, 0, 2),
-            Cursor = Cursors.Hand
-        };
-        var box = new Border { Child = block, Cursor = Cursors.Hand };
-        box.MouseLeftButtonUp += (_, _) => click();
-        return box;
+        _voicePage.Children.Add(wrap);
     }
 
     static Border Row(string text, Action click, bool leave = false)

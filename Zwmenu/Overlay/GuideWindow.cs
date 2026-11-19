@@ -81,6 +81,7 @@ public sealed class GuideWindow : Window
             _open.Show();
         _open.UpdateLayout();
         TrayPaint.PlaceInCorner(_open, x, y);
+        TrayIconService.HoldTip();
         TrayDismiss.Arm(_open, () => PointerInside(), CloseGuide);
     }
 
@@ -92,6 +93,7 @@ public sealed class GuideWindow : Window
         _open = null;
         TrayDismiss.Disarm(window);
         try { window.Close(); } catch { /* уже закрыто */ }
+        TrayIconService.ReleaseTip();
     }
 
     public static bool IsShown => _open is { IsVisible: true };
