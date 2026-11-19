@@ -219,6 +219,7 @@ public static class AppUpdate
         if (!IsTrusted(offer.Url))
             throw new InvalidDataException("url");
 
+        DiskSweep.KeepOnly(offer.Version);
         var finalPath = SetupPath(offer.Version);
         if (Ready(finalPath, offer.Size))
         {

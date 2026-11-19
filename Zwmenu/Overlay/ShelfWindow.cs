@@ -2222,6 +2222,8 @@ public sealed class ShelfWindow : Window
         if (IconCache.TryGetValue(key, out byte[]? cached))
             return cached;
         byte[]? png = LoadShellIcon(path);
+        if (IconCache.Count > 400)
+            IconCache.Clear();
         IconCache[key] = png;
         return png;
     }

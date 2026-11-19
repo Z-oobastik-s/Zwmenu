@@ -65,6 +65,7 @@ public partial class App: Application
                 VoiceShift.SelfCheck();
                 VoiceShiftLive.SelfCheckPolicy();
                 WorkshopWindow.Smoke();
+                DiskSweep.SelfCheck();
                 File.WriteAllText(report, "ok");
                 Environment.Exit(0);
             }
@@ -148,6 +149,7 @@ public partial class App: Application
                 Dispatcher.BeginInvoke(EdgeShareWindow.ShowCurrent);
         };
         EdgeShareService.Shared.Start();
+        DiskSweep.Soon();
         PrintPeer.StartServer();
         PhotoOpen.StartServer();
         PhotoOpen.OpenFromArgs(e.Args);

@@ -220,6 +220,8 @@ public sealed class ScreenshotOverlayWindow : Window
         {
             _readGen++;
             _readCancel?.Cancel();
+            try { _bitmap.Dispose(); }
+            catch { /* снимок уже отпущен */ }
         };
 
         var root = new System.Windows.Controls.Grid();
