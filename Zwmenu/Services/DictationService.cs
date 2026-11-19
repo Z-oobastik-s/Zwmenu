@@ -47,34 +47,67 @@ public sealed class DictationService : IDisposable
     private readonly StringBuilder _finalsUk = new();
     private int _tapCount;
     private long _tapWindowStart;
+    private int _keepGen;
+    private int _modelPin;
 
     public DictationService(Dispatcher dispatcher)
     {
         _dispatcher = dispatcher;
-        // Модели и распознаватели заранее: иначе первые секунды удержания теряются на создании Vosk.
-        _ = Task.Run(WarmRecognizers);
     }
 
-    private void WarmRecognizers()
+    private void PinModels()
     {
-        try
-        {
-            Model ru = VoskModelStore.PreloadRuAsync().GetAwaiter().GetResult();
-            Model? uk = null;
-            try { uk = VoskModelStore.PreloadUkAsync().GetAwaiter().GetResult(); }
-            catch { /* без UK диктовка остаётся на русском */ }
+        if (Interlocked.Exchange(ref _modelPin, 1) == 0)
+            VoskModelStore.Pin();
+    }
 
-            RunMicExclusive(() =>
-            {
-                if (_disposed)
-                    return;
-                EnsureLiveRecognizers(ScreenshotStore.Current.DictationLangMode, ru, uk);
-            });
-        }
-        catch
+    private void UnpinModels()
+    {
+        if (Interlocked.Exchange(ref _modelPin, 0) == 1)
+            VoskModelStore.Unpin();
+    }
+
+    /// <summary>
+    /// Минуту после диктовки модели ещё под рукой, потом память отдаём системе.
+    /// Следующее удержание загрузит их снова.
+    /// </summary>
+    private void ScheduleRelease()
+    {
+        if (_disposed)
+            return;
+        int gen = Interlocked.Increment(ref _keepGen);
+        _ = Task.Run(async () =>
         {
-            // первый StartMic поднимет сам
+            try { await Task.Delay(60_000).ConfigureAwait(false); }
+            catch { return; }
+            if (gen != Volatile.Read(ref _keepGen) || _disposed)
+                return;
+            bool dropped = false;
+            RunMicExclusive(() => dropped = ReleaseIdleUnlocked(gen));
+            if (dropped)
+                GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        });
+    }
+
+    private bool ReleaseIdleUnlocked(int gen)
+    {
+        if (gen != Volatile.Read(ref _keepGen) || _disposed)
+            return false;
+        lock (_gate)
+        {
+            if (_holding || _starting || _finishing)
+                return false;
+            VoskRecognizer? ru = _recognizerRu;
+            VoskRecognizer? uk = _recognizerUk;
+            _recognizerRu = null;
+            _recognizerUk = null;
+            DisposeRecognizer(ru);
+            DisposeRecognizer(uk);
         }
+
+        UnpinModels();
+        VoskModelStore.Drop();
+        return true;
     }
 
     public void ApplySettings()
@@ -312,6 +345,7 @@ public sealed class DictationService : IDisposable
     private void StartMicUnlocked(int session)
     {
         WaveInEvent? wave = null;
+        Interlocked.Increment(ref _keepGen);
 
         try
         {
@@ -324,10 +358,12 @@ public sealed class DictationService : IDisposable
                     _starting = false;
                     if (session == _session)
                         _finishing = false;
+                    ScheduleRelease();
                     return;
                 }
             }
 
+            PinModels();
             var cfg = ScreenshotStore.Current;
             int lang = cfg.DictationLangMode; // 0 auto, 1 ru, 2 uk
             Model? modelRu = null;
@@ -350,6 +386,7 @@ public sealed class DictationService : IDisposable
                 if (!stillWanted)
                 {
                     _starting = false;
+                    ScheduleRelease();
                     return;
                 }
             }
@@ -404,6 +441,7 @@ public sealed class DictationService : IDisposable
             if (gen < 0)
             {
                 StopAndDisposeWave(wave);
+                ScheduleRelease();
                 return;
             }
 
@@ -668,6 +706,8 @@ public sealed class DictationService : IDisposable
             }));
         }
         catch { /* dispatcher */ }
+
+        ScheduleRelease();
     }
 
     private void CleanupMicUnlocked(int session)
@@ -692,8 +732,9 @@ public sealed class DictationService : IDisposable
         }
 
         StopAndDisposeWave(wave);
-        try { ru?.Reset(); } catch { /* держим прогретыми */ }
+        try { ru?.Reset(); } catch { /* до отпускания по простою */ }
         try { uk?.Reset(); } catch { /* ignore */ }
+        ScheduleRelease();
     }
 
     private void EnsureLiveRecognizers(int lang, Model? modelRu, Model? modelUk)
@@ -979,6 +1020,8 @@ public sealed class DictationService : IDisposable
 
                     DisposeRecognizer(ru);
                     DisposeRecognizer(uk);
+                    UnpinModels();
+                    VoskModelStore.Drop();
                 }
                 finally { _micMutex.Release(); }
             }

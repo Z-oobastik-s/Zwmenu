@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using NAudio.Wave;
 using Vosk;
 using Zwmenu.Services;
@@ -18,6 +18,7 @@ internal sealed class WorkoutVoiceListener : IDisposable
     private VoskRecognizer? _recognizer;
     private bool _disposed;
     private bool _running;
+    private int _modelPin;
     private string? _lastCmd;
     private DateTime _lastCmdAt = DateTime.MinValue;
 
@@ -37,13 +38,21 @@ internal sealed class WorkoutVoiceListener : IDisposable
         try
         {
             StatusChanged?.Invoke("Голос: подключаю микрофон…");
+            if (Interlocked.Exchange(ref _modelPin, 1) == 0)
+                VoskModelStore.Pin();
             Model model = await PreloadAsync().ConfigureAwait(false);
             if (_disposed)
+            {
+                DropPin();
                 return;
+            }
 
             await Task.Yield();
             if (_disposed)
+            {
+                DropPin();
                 return;
+            }
 
             int device = 0;
             int bufferMs = 300;
@@ -70,6 +79,7 @@ internal sealed class WorkoutVoiceListener : IDisposable
                 {
                     try { wave.Dispose(); } catch { /* ignore */ }
                     try { recognizer.Dispose(); } catch { /* ignore */ }
+                    DropPin();
                     return;
                 }
 
@@ -234,5 +244,12 @@ internal sealed class WorkoutVoiceListener : IDisposable
             return;
         _disposed = true;
         StopInternal();
+        DropPin();
+    }
+
+    private void DropPin()
+    {
+        if (Interlocked.Exchange(ref _modelPin, 0) == 1)
+            VoskModelStore.Unpin();
     }
 }

@@ -695,7 +695,7 @@
                 <StackPanel MaxWidth="560" HorizontalAlignment="Left">
                     <TextBlock Text="Клавиша" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                               Text="По умолчанию F4 выделяет весь экран. Область можно двигать и менять размер. В этом режиме Ctrl+C копирует, Ctrl+S сохраняет на рабочий стол, Esc отменяет."/>
+                               Text="F4 открывает снимок без рамки. Выдели мышкой нужный кусок или нажми Ctrl+A, чтобы взять весь экран. Потом рамку можно двигать. Ctrl+C копирует, Ctrl+S сохраняет на рабочий стол, Esc отменяет."/>
                     <DockPanel LastChildFill="True">
                         <Button x:Name="ShotHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
                                 MinWidth="120" Margin="8,0,0,0" Click="OnShotHotkeyAssign"/>
@@ -727,7 +727,7 @@
                               Foreground="#FFF5F0E8" FontSize="13.5"
                               Content="Запоминать выделенную область"/>
                     <TextBlock Margin="24,2,0,0" Opacity="0.5" FontSize="12" TextWrapping="Wrap"
-                               Text="Следующий снимок откроет ту же рамку, а не весь экран."/>
+                               Text="Следующий снимок откроет ту же рамку."/>
                     <CheckBox x:Name="ShotCursorBox" Margin="0,8,0,0" Click="OnShotCursorClick"
                               Foreground="#FFF5F0E8" FontSize="13.5"
                               Content="Сохранять курсор на скриншоте"/>

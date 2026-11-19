@@ -21,6 +21,42 @@ internal static class VoskModelStore
     private static Model? _uk;
     private static Task<Model>? _ruTask;
     private static Task<Model?>? _ukTask;
+    private static int _pins;
+
+    /// <summary>Диктовка или тренировка держит модель. Пока пин висит, Drop ничего не трогает.</summary>
+    public static void Pin() => Interlocked.Increment(ref _pins);
+
+    public static void Unpin()
+    {
+        if (Interlocked.Decrement(ref _pins) < 0)
+            Interlocked.Exchange(ref _pins, 0);
+    }
+
+    /// <summary>Отпускает модели, когда ими никто не пользуется. Следующая диктовка загрузит заново.</summary>
+    public static void Drop()
+    {
+        if (Volatile.Read(ref _pins) > 0)
+            return;
+
+        Model? ru;
+        Model? uk;
+        lock (Gate)
+        {
+            if (Volatile.Read(ref _pins) > 0)
+                return;
+            if (_ruTask is { IsCompleted: false } || _ukTask is { IsCompleted: false })
+                return;
+            ru = _ru;
+            uk = _uk;
+            _ru = null;
+            _uk = null;
+            _ruTask = null;
+            _ukTask = null;
+        }
+
+        try { ru?.Dispose(); } catch { /* уже закрыта */ }
+        try { uk?.Dispose(); } catch { /* уже закрыта */ }
+    }
 
     public static string VoiceRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

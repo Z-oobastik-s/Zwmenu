@@ -26,7 +26,7 @@ static class ShellContextMenu
     private static readonly Guid MenuId = new("000214E4-0000-0000-C000-000000000046");
     private static readonly Guid Menu2Id = new("000214F4-0000-0000-C000-000000000046");
 
-    public static void Show(IntPtr owner, string path, bool extended, Action? putBack)
+    public static void Show(IntPtr owner, string path, bool extended, Action? putBack, (uint Id, string Label)[]? more = null, Action<uint>? picked = null)
     {
         if (owner == IntPtr.Zero || string.IsNullOrWhiteSpace(path))
             return;

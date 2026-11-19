@@ -76,8 +76,26 @@ static class CursorKeep
         }
     }
 
+    static int _suspended;
+
+    public static void Suspend() => Interlocked.Increment(ref _suspended);
+
+    public static void Resume()
+    {
+        int now;
+        do
+        {
+            now = Volatile.Read(ref _suspended);
+            if (now <= 0)
+                return;
+        }
+        while (Interlocked.CompareExchange(ref _suspended, now - 1, now) != now);
+    }
+
     static void Paint()
     {
+        if (Volatile.Read(ref _suspended) > 0)
+            return;
         IntPtr cursor = GetCursor();
         if (cursor == IntPtr.Zero)
         {
@@ -93,6 +111,8 @@ static class CursorKeep
     /// <summary>Счётчик ShowCursor общий. Если ушёл ниже нуля, стрелка есть, но её не рисуют.</summary>
     public static void EnsureShown()
     {
+        if (Volatile.Read(ref _suspended) > 0)
+            return;
         int count = ShowCursor(true);
         int guard = 0;
         while (count < 0 && guard++ < 16)

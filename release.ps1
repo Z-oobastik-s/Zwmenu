@@ -49,7 +49,9 @@ try {
   $code = Gh "GET" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/tags/v$version" ""
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
-    $json = @{ tag_name = "v$version"; name = $version; body = "Obnovlenie Zwmenu."; draft = $false; prerelease = $false } | ConvertTo-Json
+    $json = @{ tag_name = "v$version"; name = $version; body = @"
+Связь двух ноутбуков не уходит на чужой адрес из сети. Второй запуск Zwmenu не поднимает ещё один процесс. После сбоя окно закрывается, а не остаётся со сломанными хуками.
+"@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta
     if ($code -ne "201") { throw "GitHub ne sozdal reliz ($code)" }

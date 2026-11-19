@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Windows.Forms;
 using Zwmenu.Overlay;
 
 namespace Zwmenu.Services;
@@ -8,6 +10,7 @@ public sealed class TrayIconService: IDisposable
     private readonly System.Windows.Forms.NotifyIcon _icon;
     private readonly System.Windows.Forms.ToolStripMenuItem _recent;
     private readonly System.Windows.Forms.ToolStripMenuItem _edges;
+    private readonly System.Windows.Forms.ToolStripMenuItem _voice;
     private int _clipPhase;
     private bool _disposed;
 
@@ -26,12 +29,21 @@ public sealed class TrayIconService: IDisposable
         menu.Opening += (_, _) =>
         {
             FillRecent();
+            FillVoice();
             _edges.Text = EdgeShareService.Shared.Running ? "Выключить два экрана" : "Включить два экрана";
         };
         menu.Items.Add("Открыть статус", null, (_, _) => ShowRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("Просмотр фото", null, (_, _) => PhotoWindow.PickAndShow());
+        menu.Items.Add("Просмотр видео", null, (_, _) => VideoWindow.PickAndShow());
+        menu.Items.Add("Музыка", null, (_, _) => MusicWindow.PickAndShow());
         menu.Items.Add(_edges);
         menu.Items.Add("Настроить два экрана", null, (_, _) => EdgeShareWindow.ShowCurrent());
         menu.Items.Add("Шаблоны", null, (_, _) => SnippetWindow.ShowCurrent());
+        _voice = new System.Windows.Forms.ToolStripMenuItem("Голос")
+        {
+            DropDown = new WheelMenu()
+        };
+        menu.Items.Add(_voice);
         menu.Items.Add("Настройки колеса", null, (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("Проверить обновление", null, (_, _) => AppUpdate.CheckSoon(manual: true));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -54,6 +66,46 @@ public sealed class TrayIconService: IDisposable
     {
         _clipPhase = phase;
         try { _icon.Text = TrayTip(); } catch { /* подсказка трея не критична */ }
+    }
+
+    private void FillVoice()
+    {
+        _voice.DropDownItems.Clear();
+        _voice.DropDownItems.Add("Открыть настройки", null, (_, _) => VoiceShiftWindow.ShowCurrent());
+        string toggle = VoiceShiftLive.Shared.Running ? "Выключить" : "Включить";
+        _voice.DropDownItems.Add(toggle, null, (_, _) => VoiceShiftLive.Shared.ToggleSaved());
+        bool hear = ScreenshotStore.Current.VoiceShiftHear;
+        var hearItem = new System.Windows.Forms.ToolStripMenuItem("Слышать себя") { Checked = hear };
+        hearItem.Click += (_, _) => VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
+        _voice.DropDownItems.Add(hearItem);
+        _voice.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
+        AddVoices("Девушки", color => color.Model.Length > 0);
+        AddVoices("Образы", color => color.Model.Length == 0 && color.Face.On);
+        AddVoices("Эффекты", color => color.Model.Length == 0 && !color.Face.On);
+    }
+
+    private void AddVoices(string title, Func<VoiceColor, bool> take)
+    {
+        var group = new System.Windows.Forms.ToolStripMenuItem(title) { DropDown = new WheelMenu() };
+        int current = VoiceShift.Shared.Preset;
+        bool here = false;
+        for (int i = 0; i < VoiceColor.All.Count; i++)
+        {
+            if (!take(VoiceColor.All[i]))
+                continue;
+            int index = i;
+            bool on = i == current;
+            if (on)
+                here = true;
+            var item = new System.Windows.Forms.ToolStripMenuItem(VoiceColor.All[i].Title) { Checked = on };
+            item.Click += (_, _) => VoiceShift.Shared.ApplyPreset(index);
+            group.DropDownItems.Add(item);
+        }
+
+        if (group.DropDownItems.Count == 0)
+            return;
+        group.Checked = here;
+        _voice.DropDownItems.Add(group);
     }
 
     private void FillRecent()
@@ -152,5 +204,65 @@ public sealed class TrayIconService: IDisposable
         _icon.Visible = false;
         _icon.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Меню, которое умещается в экран и листается колесом.</summary>
+    private sealed class WheelMenu : ToolStripDropDownMenu
+    {
+        private const int WM_MOUSEWHEEL = 0x020A;
+
+        private static readonly MethodInfo? ScrollByItem = typeof(ToolStripDropDownMenu).GetMethod(
+            "ScrollInternal",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            new[] { typeof(bool) },
+            null);
+
+        private static readonly PropertyInfo? NeedsScroll = typeof(ToolStripDropDownMenu).GetProperty(
+            "RequiresScrollButtons",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        public WheelMenu()
+        {
+            ShowCheckMargin = true;
+            ShowImageMargin = false;
+        }
+
+        protected override void OnOpening(System.ComponentModel.CancelEventArgs e)
+        {
+            Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
+            int below = area.Bottom - Cursor.Position.Y;
+            int above = Cursor.Position.Y - area.Top;
+            int room = Math.Max(below, above) - 8;
+            if (room < 240)
+                room = Math.Max(240, area.Height - 8);
+            MaximumSize = new Size(420, Math.Min(room, area.Height - 8));
+            base.OnOpening(e);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_MOUSEWHEEL && Wheel(m.WParam))
+            {
+                m.Result = IntPtr.Zero;
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private bool Wheel(IntPtr wparam)
+        {
+            if (ScrollByItem == null || NeedsScroll?.GetValue(this) is not true)
+                return false;
+            int delta = (short)((wparam.ToInt64() >> 16) & 0xFFFF);
+            if (delta == 0)
+                return false;
+            bool up = delta > 0;
+            int steps = Math.Clamp(Math.Abs(delta) / 40, 1, 6);
+            for (int i = 0; i < steps; i++)
+                ScrollByItem.Invoke(this, new object[] { up });
+            return true;
+        }
     }
 }

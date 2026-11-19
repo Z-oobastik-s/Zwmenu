@@ -66,6 +66,7 @@ public sealed class ScreenshotOverlayWindow : Window
     private bool _selReady;
     private bool _busy;
     private bool _dragging;
+    private bool _creating;
     private bool _drawing;
     private bool _barOpen;
     private bool _textMove;
@@ -418,13 +419,24 @@ public sealed class ScreenshotOverlayWindow : Window
         }
     }
 
+    public void SelectAll()
+    {
+        if (_busy || ActualWidth < 2 || ActualHeight < 2)
+            return;
+        _dragging = false;
+        _creating = false;
+        try { ReleaseMouseCapture(); }
+        catch { /* захват уже снят */ }
+        _selReady = true;
+        _sel = new Rect(0, 0, ActualWidth, ActualHeight);
+        _layer.Selection = _sel;
+        _layer.InvalidateVisual();
+    }
+
     private void EnsureSelection()
     {
         if (_selReady || ActualWidth < 2 || ActualHeight < 2)
             return;
-
-        _selReady = true;
-        _sel = new Rect(0, 0, ActualWidth, ActualHeight);
 
         var settings = ScreenshotStore.Current;
         if (settings.RememberRegion
@@ -433,6 +445,7 @@ public sealed class ScreenshotOverlayWindow : Window
             && settings.RegionH >= 8
             && string.Equals(settings.MonitorDevice, _device, StringComparison.OrdinalIgnoreCase))
         {
+            _selReady = true;
             double sx = ActualWidth / _bitmap.Width;
             double sy = ActualHeight / _bitmap.Height;
             _sel = Clamp(new Rect(
@@ -441,8 +454,14 @@ public sealed class ScreenshotOverlayWindow : Window
                 settings.RegionW * sx,
                 settings.RegionH * sy));
         }
+        else
+        {
+            _sel = Rect.Empty;
+            _layer.Selection = Rect.Empty;
+        }
 
-        _layer.Selection = _sel;
+        if (_selReady)
+            _layer.Selection = _sel;
         _layer.InvalidateVisual();
     }
 
@@ -476,6 +495,8 @@ public sealed class ScreenshotOverlayWindow : Window
 
     private DrawingBitmap? Crop()
     {
+        if (!_selReady || _sel.Width < 8 || _sel.Height < 8)
+            return null;
         if (_bitmap.Width < 1 || _bitmap.Height < 1 || ActualWidth < 1 || ActualHeight < 1)
             return null;
 
@@ -548,8 +569,22 @@ public sealed class ScreenshotOverlayWindow : Window
 
         var grip = Hit(p);
         if (grip == Grip.None)
+        {
+            _creating = true;
+            _dragging = true;
+            _selReady = true;
+            _grip = Grip.None;
+            _dragStart = p;
+            _sel = new Rect(p.X, p.Y, 0, 0);
+            _layer.Selection = _sel;
+            _layer.InvalidateVisual();
+            CaptureMouse();
+            Cursor = Cursors.Cross;
+            e.Handled = true;
             return;
+        }
 
+        _creating = false;
         _dragging = true;
         _grip = grip;
         _dragStart = p;
@@ -657,11 +692,34 @@ public sealed class ScreenshotOverlayWindow : Window
 
         _dragging = false;
         ReleaseMouseCapture();
-        Cursor = CursorFor(Hit(e.GetPosition(this)));
+        if (_creating)
+        {
+            _creating = false;
+            if (_sel.Width < 8 || _sel.Height < 8)
+            {
+                _selReady = false;
+                _sel = Rect.Empty;
+                _layer.Selection = Rect.Empty;
+                _layer.InvalidateVisual();
+            }
+        }
+
+        var up = e.GetPosition(this);
+        Cursor = _selReady ? CursorFor(Hit(up)) : Cursors.Cross;
     }
 
     private Rect ApplyDrag(Point p)
     {
+        if (_creating)
+        {
+            var born = NormRect(_dragStart, p);
+            double x = Math.Clamp(born.X, 0, ActualWidth);
+            double y = Math.Clamp(born.Y, 0, ActualHeight);
+            double right = Math.Clamp(born.Right, 0, ActualWidth);
+            double bottom = Math.Clamp(born.Bottom, 0, ActualHeight);
+            return new Rect(x, y, Math.Max(0, right - x), Math.Max(0, bottom - y));
+        }
+
         double dx = p.X - _dragStart.X;
         double dy = p.Y - _dragStart.Y;
         Rect r = _dragRect;
@@ -1364,7 +1422,10 @@ public sealed class ScreenshotOverlayWindow : Window
     private void ApplyToolCursor(Point point)
     {
         if (_tool == ShotTool.Select)
-            Cursor = CursorFor(Hit(point));
+        {
+            var grip = Hit(point);
+            Cursor = grip == Grip.None ? Cursors.Cross : CursorFor(grip);
+        }
         else if (_tool == ShotTool.Text)
             Cursor = Cursors.IBeam;
         else
@@ -1938,8 +1999,13 @@ public sealed class ScreenshotOverlayWindow : Window
 
             Rect sel = Selection;
             if (sel.Top > 0)
-                dc.DrawRectangle(Dim, null, new Rect(0, 0, w, Math.Min(sel.Top, h)));
-            if (sel.Bottom < h)
+            if (w <= 1 || h <= 1)
+                return;
+            if (Selection.Width < 1 || Selection.Height < 1)
+            {
+                dc.DrawRectangle(Dim, null, new Rect(0, 0, w, h));
+                return;
+            }
                 dc.DrawRectangle(Dim, null, new Rect(0, Math.Max(0, sel.Bottom), w, h - Math.Max(0, sel.Bottom)));
 
             double midTop = Math.Clamp(sel.Top, 0, h);

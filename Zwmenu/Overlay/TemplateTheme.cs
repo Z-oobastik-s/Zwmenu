@@ -32,7 +32,27 @@ static class TemplateTheme
         return b;
     }
 
-    public static Border Pill(string text, Action click, bool accent = false, bool danger = false)
+    public static void Hint(FrameworkElement el, string text)
+    {
+        ToolTipService.SetInitialShowDelay(el, 2000);
+        ToolTipService.SetBetweenShowDelay(el, 1500);
+        ToolTipService.SetShowDuration(el, 5000);
+        el.ToolTip = new ToolTip
+        {
+            Content = text,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            Background = Brush(BgPanel),
+            Foreground = Brush(Fg),
+            BorderBrush = Brush(Border),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 5, 8, 5),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 12,
+            HasDropShadow = false
+        };
+    }
+
+    public static Border Pill(string text, Action click, bool accent = false, bool danger = false, string? hint = null)
     {
         var fill = accent ? Accent : (danger ? Color.FromRgb(0x3A, 0x22, 0x24) : BtnBg);
         var hover = accent ? AccentHover : (danger ? Color.FromRgb(0x52, 0x2C, 0x30) : BtnHover);
@@ -65,6 +85,8 @@ static class TemplateTheme
         {
             try { click(); } catch { /* кнопка не валит окно */ }
         };
+        if (!string.IsNullOrWhiteSpace(hint))
+            Hint(border, hint);
         return border;
     }
 

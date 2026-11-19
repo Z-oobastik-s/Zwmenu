@@ -17,12 +17,20 @@ public partial class App: Application
     private PathFixWindow? _pathFix;
     private bool _exiting;
     private Mutex? _singleInstance;
+    private bool _ownsInstance;
+    private int _uiFault;
     private WorkoutReminderService? _workoutReminder;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         if (PrintPeer.TakeRequest(e.Args))
+            return;
+        if (PhotoOpen.TakeRequest(e.Args))
+            return;
+        if (VideoOpen.TakeRequest(e.Args))
+            return;
+        if (MusicOpen.TakeRequest(e.Args))
             return;
         if (e.Args.Any(a => string.Equals(a, "--looksheet", StringComparison.OrdinalIgnoreCase)))
         {
@@ -46,7 +54,16 @@ public partial class App: Application
                 FolderConsole.SelfCheck();
                 BackgroundRemoveService.SelfCheck();
                 AppUpdate.SelfCheck();
+                SetupOffer.SelfCheck();
+                PhotoOpen.SelfCheck();
+                VideoOpen.SelfCheck();
+                MusicOpen.SelfCheck();
+                FileKindIcons.SelfCheck();
                 ScreenCapture.SelfCheck();
+                ShelfArrange.SelfCheck();
+                EdgeCapture.SelfCheck();
+                VoiceShift.SelfCheck();
+                VoiceShiftLive.SelfCheckPolicy();
                 WorkshopWindow.Smoke();
                 File.WriteAllText(report, "ok");
                 Environment.Exit(0);
@@ -58,8 +75,11 @@ public partial class App: Application
             }
         }
 
-        try { _singleInstance = new Mutex(false, "ZwmenuSingleInstance"); }
-        catch { /* имя занято: удаление всё равно найдёт процесс по файлу */ }
+        if (!TryOwnInstance())
+        {
+            Environment.Exit(0);
+            return;
+        }
         SessionEnding += (_, args) =>
         {
             args.Cancel = false;
@@ -72,18 +92,33 @@ public partial class App: Application
         DispatcherUnhandledException += (_, args) =>
         {
             args.Handled = true;
+            if (_exiting || Interlocked.Exchange(ref _uiFault, 1) != 0)
+                return;
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zwmenu");
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "last-error.txt"), args.Exception.ToString());
+            }
+            catch
+            {
+                // журнал необязателен
+            }
             try
             {
                 System.Windows.MessageBox.Show(
-                    "Ошибка: " + args.Exception.Message,
+                    "Ошибка: " + args.Exception.Message + "\n\nZwmenu закроется, чтобы не оставить сломанные хуки.",
                     "Zwmenu",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
             catch
             {
-                // ignore
+                // окно ошибки уже не показать
             }
+            try { ExitApp(fromWindows: true); }
+            catch { Environment.Exit(1); }
         };
 
         CursorKeep.Install();
@@ -114,6 +149,14 @@ public partial class App: Application
         };
         EdgeShareService.Shared.Start();
         PrintPeer.StartServer();
+        PhotoOpen.StartServer();
+        PhotoOpen.OpenFromArgs(e.Args);
+        VideoOpen.StartServer();
+        VideoOpen.OpenFromArgs(e.Args);
+        MusicOpen.StartServer();
+        MusicOpen.OpenFromArgs(e.Args);
+        try { VoiceShiftLive.Shared.Restore(); }
+        catch { /* окно голоса покажет, если микрофон не открылся */ }
         StayAwake.Start();
         UpdateWindow.ExitForUpdate = () =>
         {
@@ -129,6 +172,13 @@ public partial class App: Application
             AppUpdate.CheckSoon(manual: false);
         };
         updateTimer.Start();
+        var setupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        setupTimer.Tick += (_, _) =>
+        {
+            setupTimer.Stop();
+            SetupOffer.CheckSoon();
+        };
+        setupTimer.Start();
     }
 
     private void ShowPathFix(ActionProblem problem)
@@ -198,6 +248,40 @@ public partial class App: Application
         _window.Activate();
     }
 
+    private bool TryOwnInstance()
+    {
+        try
+        {
+            _singleInstance = new Mutex(false, "ZwmenuSingleInstance");
+            try
+            {
+                _ownsInstance = _singleInstance.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                _ownsInstance = true;
+            }
+
+            return _ownsInstance;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private void ReleaseInstance()
+    {
+        if (!_ownsInstance || _singleInstance == null)
+            return;
+        try { _singleInstance.ReleaseMutex(); }
+        catch { /* уже отпущен */ }
+        _ownsInstance = false;
+        try { _singleInstance.Dispose(); }
+        catch { /* уже закрыт */ }
+        _singleInstance = null;
+    }
+
     private void ExitApp() => ExitApp(fromWindows: false);
 
     private void ExitApp(bool fromWindows)
@@ -213,7 +297,11 @@ public partial class App: Application
         }
 
         _exiting = true;
+        VoiceShiftLive.Shared.StopForExit();
         PrintPeer.StopServer();
+        PhotoOpen.StopServer();
+        VideoOpen.StopServer();
+        MusicOpen.StopServer();
         AppUpdate.Stop();
         EdgeShareService.Shared.Dispose();
         _workoutReminder?.Dispose();
@@ -231,6 +319,7 @@ public partial class App: Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        ReleaseInstance();
         EdgeShareService.Shared.Dispose();
         _workoutReminder?.Dispose();
         _launcher?.Dispose();

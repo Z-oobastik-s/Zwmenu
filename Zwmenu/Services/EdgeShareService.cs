@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -122,6 +123,12 @@ public sealed class EdgeShareService : IDisposable
             }));
         };
         _capture.OnStoppedHosting = () => Zwmenu.Overlay.EdgeCarryCue.Hide();
+        _capture.OnLocalGrab = ratio =>
+        {
+            try { _files.CancelCarry(); }
+            catch { /* жест уже сброшен */ }
+            Enqueue(EdgeWire.Back(ratio));
+        };
         _capture.OnForceReturn = () =>
         {
             try { _files.CancelCarry(); }
@@ -253,10 +260,15 @@ public sealed class EdgeShareService : IDisposable
     public void ConnectPeer(EdgePeer peer)
     {
         bool same = string.Equals(_settings.PeerName, peer.Name, StringComparison.OrdinalIgnoreCase);
-        _settings.PeerName = peer.Name;
-        _settings.PeerHost = peer.Host;
-        _settings.PeerPort = peer.Port;
-        _ = Dial(peer.Host, peer.Port, pairing: !(same && _settings.TokenBytes != null));
+        bool have = _settings.TokenBytes != null;
+        if (!(same && have))
+        {
+            _settings.PeerName = peer.Name;
+            _settings.PeerHost = peer.Host;
+            _settings.PeerPort = peer.Port;
+        }
+
+        _ = Dial(peer.Host, peer.Port, pairing: !(same && have));
     }
 
     public void ConnectHost(string host)
@@ -264,7 +276,7 @@ public sealed class EdgeShareService : IDisposable
         host = (host ?? "").Trim();
         if (host.Length == 0)
             return;
-        _ = Dial(host, TcpPort, pairing: true);
+        _ = Dial(host, TcpPort, pairing: _settings.TokenBytes == null);
     }
 
     public void Respond(bool allow)
@@ -288,6 +300,19 @@ public sealed class EdgeShareService : IDisposable
 
     private async Task Dial(string host, int port, bool pairing)
     {
+        bool prove = !pairing && HaveToken() && !SameHost(host, _settings.PeerHost);
+        bool opened = await DialOnce(host, port, pairing, prove).ConfigureAwait(false);
+        if (opened || !_running || pairing || !HaveToken())
+            return;
+        if (!TryLiveAddress(out string liveHost, out int livePort))
+            return;
+        if (SameHost(liveHost, host) && livePort == port)
+            return;
+        await DialOnce(liveHost, livePort, pairing: false, prove: true).ConfigureAwait(false);
+    }
+
+    private async Task<bool> DialOnce(string host, int port, bool pairing, bool prove)
+    {
         if (_link != null || _busy || !_running)
         {
             if (_running)
@@ -296,7 +321,7 @@ public sealed class EdgeShareService : IDisposable
                 Raise();
             }
 
-            return;
+            return false;
         }
 
         int session = _session;
@@ -316,22 +341,23 @@ public sealed class EdgeShareService : IDisposable
             if (session != _session || !_running)
             {
                 client.Dispose();
-                return;
+                return false;
             }
 
             handed = true;
-            await RunClient(client, pairing, session).ConfigureAwait(false);
+            return await RunClient(client, pairing, session, prove).ConfigureAwait(false);
         }
         catch (Exception)
         {
             try { client?.Dispose(); } catch { /* уже закрыт */ }
             ReleaseBusy(session);
             if (session != _session || !_running)
-                return;
+                return false;
             OutgoingCode = null;
             if (_link == null)
                 Status = "Второй ноутбук не отвечает. Открой на нём Zwmenu и включи «Два экрана».";
             Raise();
+            return false;
         }
         finally
         {
@@ -385,7 +411,7 @@ public sealed class EdgeShareService : IDisposable
 
             await stream.WriteAsync(Magic).ConfigureAwait(false);
             var helloBody = await ReadFrame(stream, CancellationToken.None).ConfigureAwait(false);
-            if (helloBody == null || !EdgeWire.TryHello(helloBody, out bool peerOnRight, out string name, out byte[] token, out _))
+            if (helloBody == null || !EdgeWire.TryHello(helloBody, out bool peerOnRight, out string name, out byte[] token, out string code))
             {
                 client.Dispose();
                 return;
@@ -398,6 +424,26 @@ public sealed class EdgeShareService : IDisposable
             {
                 RememberRemote(client, name);
                 await WriteBody(stream, EdgeWire.Accept(_settings.TokenBytes!)).ConfigureAwait(false);
+            }
+            else if (TryProofChallenge(name, token, code, out byte[] proof))
+            {
+                await WriteBody(stream, EdgeWire.Accept(proof)).ConfigureAwait(false);
+                using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var second = await ReadFrame(stream, wait.Token).ConfigureAwait(false);
+                if (second == null
+                    || !EdgeWire.TryHello(second, out _, out string name2, out byte[] token2, out _)
+                    || _settings.TokenBytes is not { Length: 16 } saved2
+                    || token2.Length != 16
+                    || !saved2.AsSpan().SequenceEqual(token2))
+                {
+                    try { await WriteBody(stream, EdgeWire.Deny()).ConfigureAwait(false); }
+                    catch { /* сокет уже закрыт */ }
+                    client.Dispose();
+                    return;
+                }
+
+                RememberRemote(client, name2);
+                await WriteBody(stream, EdgeWire.Accept(saved2)).ConfigureAwait(false);
             }
             else if (CanAdopt(name))
             {
@@ -432,13 +478,13 @@ public sealed class EdgeShareService : IDisposable
         }
     }
 
-    private async Task RunClient(TcpClient client, bool pairing, int session)
+    private async Task<bool> RunClient(TcpClient client, bool pairing, int session, bool prove)
     {
         if (session != _session || !_running)
         {
             client.Dispose();
             ReleaseBusy(session);
-            return;
+            return false;
         }
 
         var stream = client.GetStream();
@@ -446,9 +492,52 @@ public sealed class EdgeShareService : IDisposable
         if (!await ReadMagic(stream).ConfigureAwait(false))
             throw new IOException("чужой ответ");
 
-        byte[]? token = pairing ? null : _settings.TokenBytes;
-        await WriteBody(stream, EdgeWire.Hello(_settings.PeerOnRight, MachineName, token, "")).ConfigureAwait(false);
+        var saved = _settings.TokenBytes;
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        if (prove && saved is { Length: 16 })
+        {
+            byte[] nonce = RandomBytes(16);
+            await WriteBody(stream, EdgeWire.Hello(_settings.PeerOnRight, MachineName, null, Convert.ToHexString(nonce))).ConfigureAwait(false);
+            var challenge = await ReadFrame(stream, limit.Token).ConfigureAwait(false);
+            byte[] expect = TokenProof(saved, nonce);
+            if (challenge == null || challenge.Length != 17 || challenge[0] != EdgeWire.AcceptCode || !challenge.AsSpan(1).SequenceEqual(expect))
+            {
+                client.Dispose();
+                OutgoingCode = null;
+                ReleaseBusy(session);
+                Status = "Второй ноутбук не подтвердил пару.";
+                Raise();
+                return false;
+            }
+
+            await WriteBody(stream, EdgeWire.Hello(_settings.PeerOnRight, MachineName, saved, "")).ConfigureAwait(false);
+            var confirm = await ReadFrame(stream, limit.Token).ConfigureAwait(false);
+            if (confirm == null || confirm.Length != 17 || confirm[0] != EdgeWire.AcceptCode || !confirm.AsSpan(1).SequenceEqual(saved))
+            {
+                client.Dispose();
+                OutgoingCode = null;
+                ReleaseBusy(session);
+                Status = "Второй ноутбук не подтвердил пару.";
+                Raise();
+                return false;
+            }
+
+            RememberRemote(client, _settings.PeerName ?? "");
+            OutgoingCode = null;
+            Save();
+            if (session != _session || !_running)
+            {
+                client.Dispose();
+                ReleaseBusy(session);
+                return false;
+            }
+
+            await Pump(client, stream, session).ConfigureAwait(false);
+            return true;
+        }
+
+        byte[]? token = pairing ? null : saved;
+        await WriteBody(stream, EdgeWire.Hello(_settings.PeerOnRight, MachineName, token, "")).ConfigureAwait(false);
         var reply = await ReadFrame(stream, limit.Token).ConfigureAwait(false);
         if (reply == null || reply.Length == 0 || reply[0] == EdgeWire.DenyCode)
         {
@@ -457,13 +546,23 @@ public sealed class EdgeShareService : IDisposable
             ReleaseBusy(session);
             Status = "Второй ноутбук отклонил связь";
             Raise();
-            return;
+            return false;
         }
 
         if (reply[0] != EdgeWire.AcceptCode || reply.Length != 17)
             throw new IOException("не тот ответ");
 
         var accepted = reply[1..];
+        if (!pairing && saved is { Length: 16 } && !accepted.AsSpan().SequenceEqual(saved))
+        {
+            client.Dispose();
+            OutgoingCode = null;
+            ReleaseBusy(session);
+            Status = "Второй ноутбук не подтвердил пару.";
+            Raise();
+            return false;
+        }
+
         _settings.Token = Convert.ToBase64String(accepted);
         RememberRemote(client, _settings.PeerName ?? "");
         OutgoingCode = null;
@@ -472,10 +571,11 @@ public sealed class EdgeShareService : IDisposable
         {
             client.Dispose();
             ReleaseBusy(session);
-            return;
+            return false;
         }
 
         await Pump(client, stream, session).ConfigureAwait(false);
+        return true;
     }
 
     private async Task Pump(TcpClient client, NetworkStream stream, int session)
@@ -719,6 +819,28 @@ public sealed class EdgeShareService : IDisposable
                     while (_outgoing.TryDequeue(out var body))
                     {
                         wrote = true;
+                        if (body.Length == 5 && body[0] == EdgeWire.MoveCode)
+                        {
+                            int dx = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(1));
+                            int dy = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(3));
+                            while (_outgoing.TryPeek(out var next)
+                                && next.Length == 5
+                                && next[0] == EdgeWire.MoveCode)
+                            {
+                                int nx = BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(1));
+                                int ny = BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(3));
+                                if (dx + nx is < short.MinValue or > short.MaxValue
+                                    || dy + ny is < short.MinValue or > short.MaxValue)
+                                    break;
+                                if (!_outgoing.TryDequeue(out next))
+                                    break;
+                                dx += BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(1));
+                                dy += BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(3));
+                            }
+
+                            body = EdgeWire.Move(dx, dy);
+                        }
+
                         await WriteBody(link.Stream, body, token, recycle: false).ConfigureAwait(false);
                     }
 
@@ -810,21 +932,8 @@ public sealed class EdgeShareService : IDisposable
             if (name.Length == 0 || string.Equals(name, MachineName, StringComparison.OrdinalIgnoreCase))
                 continue;
             var peer = new EdgePeer(name, packet.RemoteEndPoint.Address.ToString(), port);
-            bool changed = false;
             lock (_gate)
-            {
                 _peers[name] = (peer, Environment.TickCount64);
-                if (string.Equals(name, _settings.PeerName, StringComparison.OrdinalIgnoreCase)
-                    && _settings.PeerHost != peer.Host)
-                {
-                    _settings.PeerHost = peer.Host;
-                    _settings.PeerPort = port;
-                    changed = true;
-                }
-            }
-
-            if (changed)
-                Save();
             Raise();
         }
     }
@@ -855,24 +964,87 @@ public sealed class EdgeShareService : IDisposable
                 continue;
             if (!ShouldDial(name, host))
                 continue;
-            if (!string.Equals(_settings.PeerName, name, StringComparison.OrdinalIgnoreCase) || _settings.PeerHost != host)
+            if (!haveToken)
             {
-                _settings.PeerName = name;
-                _settings.PeerHost = host;
-                _settings.PeerPort = port;
-                Save();
+                if (!string.Equals(_settings.PeerName, name, StringComparison.OrdinalIgnoreCase) || _settings.PeerHost != host)
+                {
+                    _settings.PeerName = name;
+                    _settings.PeerHost = host;
+                    _settings.PeerPort = port;
+                    Save();
+                }
+
+                _ = Dial(host, port, pairing: true);
+                continue;
             }
 
-            _ = Dial(host, port, pairing: !haveToken);
+            string savedHost = _settings.PeerHost ?? "";
+            int savedPort = _settings.PeerPort == 0 ? TcpPort : _settings.PeerPort;
+            if (string.IsNullOrWhiteSpace(savedHost))
+                _ = Dial(host, port, pairing: false);
+            else
+                _ = Dial(savedHost, savedPort, pairing: false);
         }
     }
 
-    private bool CanAdopt(string name)
+    private bool CanAdopt(string name) =>
+        _settings.TokenBytes == null && !string.IsNullOrWhiteSpace(name);
+
+    private bool HaveToken() => _settings.TokenBytes is { Length: 16 };
+
+    private static bool SameHost(string? left, string? right) =>
+        string.Equals(left ?? "", right ?? "", StringComparison.OrdinalIgnoreCase);
+
+    private bool TryLiveAddress(out string host, out int port)
     {
-        if (_settings.TokenBytes == null)
+        host = "";
+        port = TcpPort;
+        string? name = _settings.PeerName;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        lock (_gate)
+        {
+            if (!_peers.TryGetValue(name, out var seen))
+                return false;
+            host = seen.Peer.Host;
+            port = seen.Peer.Port;
+        }
+
+        return !string.IsNullOrWhiteSpace(host);
+    }
+
+    private bool TryProofChallenge(string name, byte[] token, string code, out byte[] proof)
+    {
+        proof = Array.Empty<byte>();
+        var saved = _settings.TokenBytes;
+        if (saved == null || token.Length != 0)
+            return false;
+        if (string.IsNullOrWhiteSpace(_settings.PeerName)
+            || !string.Equals(name, _settings.PeerName, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (code.Length != 32)
+            return false;
+        try
+        {
+            byte[] nonce = Convert.FromHexString(code);
+            if (nonce.Length != 16)
+                return false;
+            proof = TokenProof(saved, nonce);
             return true;
-        return !string.IsNullOrWhiteSpace(_settings.PeerName)
-            && string.Equals(name, _settings.PeerName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static byte[] TokenProof(byte[] token, byte[] nonce)
+    {
+        byte[] data = new byte[4 + nonce.Length];
+        "ZWM2"u8.CopyTo(data);
+        nonce.CopyTo(data, 4);
+        byte[] full = HMACSHA256.HashData(token, data);
+        return full[..16];
     }
 
     private bool TryPickPeer(out string host, out int port, out string name, out bool haveToken)

@@ -56,7 +56,8 @@ sealed class EdgeCapture : IDisposable
     private volatile bool _hosting;
     private bool _pinned;
     private bool _mustLeave = true;
-    private bool _inHook;
+    private volatile bool _inHook;
+    internal static long QuietEscapeUntil;
     private bool _track;
     private int _trackX;
     private int _trackY;
@@ -67,8 +68,16 @@ sealed class EdgeCapture : IDisposable
     private int _escHits;
     private long _escStarted;
     private int _cursorHides;
+    private int _cursorHeld;
+    private int _guardLeft;
+    private int _guardTop;
+    private int _guardRight;
+    private int _guardBottom;
     private int _boxX;
     private int _boxY;
+    private int _originX;
+    private int _originY;
+    private readonly System.Threading.Timer _moveFlush;
     private long _blockUntil;
     private int _warpX;
     private int _warpY;
@@ -81,6 +90,7 @@ sealed class EdgeCapture : IDisposable
     {
         _mouseProc = OnMouse;
         _keyProc = OnKey;
+        _moveFlush = new System.Threading.Timer(FlushMove, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
     }
 
     public bool PeerOnRight
@@ -92,6 +102,9 @@ sealed class EdgeCapture : IDisposable
     public Action<byte[]>? Sink { get; set; }
 
     public Func<bool>? PeerAlive { get; set; }
+
+    /// <summary>На этом ноутбуке тронули свой тачпад или мышь. Курсор остаётся здесь.</summary>
+    public Action<int>? OnLocalGrab { get; set; }
 
     /// <summary>Край толкнули, а второго ноутбука нет. Курсор остаётся здесь.</summary>
     public Action? OnEdgeAsleep { get; set; }
@@ -219,15 +232,6 @@ sealed class EdgeCapture : IDisposable
             return;
         }
 
-        if (_track && GetCursorPos(out var drifted)
-            && (Math.Abs(drifted.X - _trackX) > 64 || Math.Abs(drifted.Y - _trackY) > 64))
-        {
-            _track = false;
-            _grabbedUntil = now + 400;
-            SendRelative(dx, dy);
-            return;
-        }
-
         if (!_track && GetCursorPos(out var current))
         {
             _trackX = current.X;
@@ -246,12 +250,7 @@ sealed class EdgeCapture : IDisposable
         int y = Math.Clamp(_trackY + dy, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - 1));
         _trackX = x;
         _trackY = y;
-        if (SetCursorPos(x, y))
-            return;
-
-        _track = false;
-        _grabbedUntil = now + 400;
-        SendRelative(dx, dy);
+        PlaceExact(x, y);
     }
 
     public void ApplyButton(byte id, bool down)
@@ -337,6 +336,10 @@ sealed class EdgeCapture : IDisposable
 
     public void PlaceOnEntry(int yRatio)
     {
+        // Этот ноутбук принимает чужую мышь. Свой зажим в центр надо снять,
+        // иначе чужой курсор рисуется только посередине первого экрана.
+        if (_captured)
+            ReleaseCapture(null, null);
         var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
         int y = bounds.Top;
         if (bounds.Height > 1)
@@ -345,11 +348,12 @@ sealed class EdgeCapture : IDisposable
         _hosting = true;
         _blockUntil = Environment.TickCount64 + 350;
         EdgeChime.Arrive();
-        if (!CursorHidden() && SetCursorPos(x, y))
+        if (!CursorHidden())
         {
             _trackX = x;
             _trackY = y;
             _track = true;
+            PlaceExact(x, y);
             return;
         }
 
@@ -363,6 +367,7 @@ sealed class EdgeCapture : IDisposable
             return;
         _disposed = true;
         Detach();
+        try { _moveFlush.Dispose(); } catch { /* уже закрыт */ }
     }
 
     private void BeginCapture(int x, int y)
@@ -373,14 +378,20 @@ sealed class EdgeCapture : IDisposable
         var area = screen.Bounds;
         _boxX = area.Left + area.Width / 2;
         _boxY = area.Top + area.Height / 2;
+        _guardLeft = area.Left;
+        _guardTop = area.Top;
+        _guardRight = area.Right;
+        _guardBottom = area.Bottom;
         var box = new RECT
         {
             Left = area.Left,
             Top = area.Top,
-            Right = Math.Max(area.Left + 1, area.Right - 1),
-            Bottom = Math.Max(area.Top + 1, area.Bottom - 1)
+            Right = Math.Max(area.Left + 1, area.Right),
+            Bottom = Math.Max(area.Top + 1, area.Bottom)
         };
         _captured = true;
+        _originX = x;
+        _originY = y;
         _escHits = 0;
         _escHeld = false;
         bool left = (GetAsyncKeyState(0x01) & 0x8000) != 0;
@@ -392,8 +403,10 @@ sealed class EdgeCapture : IDisposable
         }
 
         HideCursor();
+        Zwmenu.Overlay.CursorKeep.Suspend();
+        _cursorHeld = 1;
         ClipCursor(ref box);
-        SetCursorPos(_boxX, _boxY);
+        _moveFlush.Change(0, 8);
         Post(EdgeWire.Enter(_yRatio(x, y)));
         EdgeChime.Leave();
         if (left)
@@ -428,8 +441,18 @@ sealed class EdgeCapture : IDisposable
         }
 
         _captured = false;
+        try
+        {
+            _moveFlush.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+        }
+        catch { /* таймер уже закрыт */ }
         ClipCursor(IntPtr.Zero);
         ShowCursorBack();
+        if (_cursorHeld != 0)
+        {
+            _cursorHeld = 0;
+            Zwmenu.Overlay.CursorKeep.Resume();
+        }
         if (placeX is int x && placeY is int y)
             SetCursorPos(x, y);
     }
@@ -467,7 +490,15 @@ sealed class EdgeCapture : IDisposable
 
         int msg = wParam.ToInt32();
         if (_hosting)
-            return (IntPtr)1;
+        {
+            // Своя постановка курсора приходит той же точкой. Её не отдаём системе,
+            // иначе чужой шаг дёргается. Настоящий тачпад или мышь этого ноутбука
+            // стоят в другом месте: курсор забираем себе, иначе им нельзя шевелить.
+            if (msg == WmMouseMove && !IsLocalPointer(data.Point.X, data.Point.Y, _trackX, _trackY))
+                return (IntPtr)1;
+            GrabLocal();
+            return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+        }
 
         // Палец отпустили уже на своём экране. Отпуск отдаём системе, иначе кнопка залипает,
         // и одновременно с него стартует перенос, который ждал этот клик.
@@ -495,20 +526,15 @@ sealed class EdgeCapture : IDisposable
                 return (IntPtr)1;
             }
 
+            // Событие не держим: положение курсора уже сменилось, его заберёт таймер.
+            // Глотать его нельзя, на этой Windows курсор тогда замирает.
+            if (msg == WmMouseMove)
+                return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+
             _inHook = true;
             try
             {
-                if (msg == WmMouseMove)
-                {
-                    int dx = data.Point.X - _boxX;
-                    int dy = data.Point.Y - _boxY;
-                    if (dx != 0 || dy != 0)
-                    {
-                        SetCursorPos(_boxX, _boxY);
-                        Post(EdgeWire.Move(dx, dy));
-                    }
-                }
-                else if (msg == WmMouseWheel)
+                if (msg == WmMouseWheel)
                 {
                     short delta = unchecked((short)((data.MouseData >> 16) & 0xFFFF));
                     Post(EdgeWire.Wheel(delta));
@@ -685,6 +711,93 @@ sealed class EdgeCapture : IDisposable
         }
     }
 
+    private void FlushMove(object? _)
+    {
+        if (!_captured || _hosting || !GetCursorPos(out var pt))
+            return;
+        var step = OneStep(_originX, _originY, pt.X, pt.Y);
+        _originX = pt.X;
+        _originY = pt.Y;
+        if ((step.Dx != 0 || step.Dy != 0) && _captured && !_hosting)
+            Post(EdgeWire.Move(step.Dx, step.Dy));
+        if (!_captured || _hosting)
+            return;
+        if (!ShouldRecenter(pt.X, pt.Y, _guardLeft, _guardTop, _guardRight, _guardBottom))
+            return;
+        PlaceExact(_boxX, _boxY);
+        _originX = _boxX;
+        _originY = _boxY;
+    }
+
+    /// <summary>
+    /// Шаг — это только отход от точки, где курсор реально стоит.
+    /// После возврата в центр следующая точка отсчёта там, куда он встал,
+    /// а не там, куда целились: иначе один и тот же сдвиг уходит дважды
+    /// и на втором экране мышь бежит быстрее.
+    /// </summary>
+    internal readonly struct Step
+    {
+        public int Dx { get; init; }
+        public int Dy { get; init; }
+    }
+
+    internal static Step OneStep(int originX, int originY, int x, int y)
+        => new() { Dx = x - originX, Dy = y - originY };
+
+    /// <summary>Чужой курсор стоит в track. Сдвиг дальше этого — уже местный палец или мышь.</summary>
+    internal static bool IsLocalPointer(int x, int y, int trackX, int trackY)
+        => Math.Abs(x - trackX) > 6 || Math.Abs(y - trackY) > 6;
+
+    /// <summary>Курсор почти у края экрана. Один раз уводим в центр, чтобы шаг не оборвался.</summary>
+    internal static bool ShouldRecenter(int x, int y, int left, int top, int right, int bottom)
+        => x <= left + 48 || y <= top + 48 || x >= right - 49 || y >= bottom - 49;
+
+    private void GrabLocal()
+    {
+        if (!_hosting)
+            return;
+        _mustLeave = true;
+        _pinned = false;
+        _blockUntil = Environment.TickCount64 + 500;
+        int ratio = CurrentYRatio();
+        Hosting = false;
+        try { OnLocalGrab?.Invoke(ratio); }
+        catch { /* сеть не роняет крючок */ }
+    }
+
+    /// <summary>Точная точка. Чужой ввод сюда не примешивается и скорость Windows не трогается.</summary>
+    private void PlaceExact(int x, int y)
+    {
+        _inHook = true;
+        try { SetCursorPos(x, y); }
+        finally { _inHook = false; }
+    }
+
+    public static void SelfCheck()
+    {
+        var first = OneStep(683, 384, 710, 390);
+        if (first.Dx != 27 || first.Dy != 6)
+            throw new InvalidOperationException("шаг от центра");
+        int origin = 683;
+        int sent = OneStep(origin, 0, 710, 0).Dx;
+        origin = 683;
+        sent += OneStep(origin, 0, 693, 0).Dx;
+        if (sent != 37)
+            throw new InvalidOperationException("после возврата в центр шаг удвоился");
+        origin = 710;
+        int missed = OneStep(683, 0, 710, 0).Dx + OneStep(origin, 0, 720, 0).Dx;
+        if (missed != 37)
+            throw new InvalidOperationException("неудачный возврат отправлен повторно");
+        if (IsLocalPointer(100, 100, 100, 100) || IsLocalPointer(104, 100, 100, 100))
+            throw new InvalidOperationException("своя точка принята за тачпад");
+        if (!IsLocalPointer(120, 100, 100, 100))
+            throw new InvalidOperationException("тачпад не отличили от чужого курсора");
+        if (ShouldRecenter(683, 384, 0, 0, 1366, 768))
+            throw new InvalidOperationException("середина экрана принята за край");
+        if (!ShouldRecenter(10, 384, 0, 0, 1366, 768) || !ShouldRecenter(1340, 384, 0, 0, 1366, 768))
+            throw new InvalidOperationException("край не уводит курсор в центр");
+    }
+
     private void Post(byte[] frame)
     {
         try { Sink?.Invoke(frame); }
@@ -745,17 +858,30 @@ sealed class EdgeCapture : IDisposable
         _pinned = false;
         _holdUntilLeftUp = false;
         _leftHeld = false;
+        try
+        {
+            _moveFlush.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+        }
+        catch { /* таймер уже закрыт */ }
         ClipCursor(IntPtr.Zero);
+        ShowCursorBack();
+        if (_cursorHeld != 0)
+        {
+            _cursorHeld = 0;
+            Zwmenu.Overlay.CursorKeep.Resume();
+        }
     }
 
     private void TapEscape()
     {
+        QuietEscapeUntil = Environment.TickCount64 + 700;
         ApplyKey(0x1B, 0, true, false);
         ApplyKey(0x1B, 0, false, false);
     }
 
     private static void NudgeCancelDrag()
     {
+        QuietEscapeUntil = Environment.TickCount64 + 700;
         IntPtr cap = GetCapture();
         IntPtr fg = GetForegroundWindow();
         Nudge(cap);
@@ -765,11 +891,17 @@ sealed class EdgeCapture : IDisposable
 
     private static void Nudge(IntPtr hwnd)
     {
-        if (hwnd == IntPtr.Zero)
+        if (hwnd == IntPtr.Zero || BelongsHere(hwnd))
             return;
         PostMessage(hwnd, 0x001F, IntPtr.Zero, IntPtr.Zero);
         PostMessage(hwnd, 0x0100, (IntPtr)0x1B, IntPtr.Zero);
         PostMessage(hwnd, 0x0101, (IntPtr)0x1B, IntPtr.Zero);
+    }
+
+    private static bool BelongsHere(IntPtr hwnd)
+    {
+        _ = GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid != 0 && pid == (uint)Environment.ProcessId;
     }
 
     private static int _yRatio(int _, int y)
@@ -892,6 +1024,9 @@ sealed class EdgeCapture : IDisposable
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);

@@ -29,8 +29,30 @@ public static class AppUpdate
     {
         get
         {
-            var version = typeof(AppUpdate).Assembly.GetName().Version ?? new Version(0, 0, 0);
-            return Normalize(version);
+            Version best = new(0, 0, 0, 0);
+            try
+            {
+                var version = typeof(AppUpdate).Assembly.GetName().Version;
+                if (version != null)
+                    best = Newer(best, Normalize(version));
+            }
+            catch { /* сборка без версии */ }
+
+            try
+            {
+                string path = typeof(AppUpdate).Assembly.Location;
+                if (path.Length > 0)
+                {
+                    var info = FileVersionInfo.GetVersionInfo(path);
+                    if (TryParseVersion(info.FileVersion ?? "", out var file))
+                        best = Newer(best, file);
+                    if (TryParseVersion(info.ProductVersion ?? "", out var product))
+                        best = Newer(best, product);
+                }
+            }
+            catch { /* файл версии недоступен */ }
+
+            return best;
         }
     }
 
@@ -446,6 +468,8 @@ public static class AppUpdate
 
     static Version Normalize(Version version) =>
         new(version.Major, version.Minor, Math.Max(version.Build, 0));
+
+    static Version Newer(Version left, Version right) => left >= right ? left : right;
 
     static HttpClient CreateClient()
     {

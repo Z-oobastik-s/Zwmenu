@@ -71,6 +71,7 @@ public sealed class LauncherService: IDisposable
         };
         _keyboard.SwallowedKeyUp += vk =>
         {
+            VoiceShiftLive.ReleaseKey(vk);
             if (_hotkeyHeld == vk)
                 _hotkeyHeld = 0;
             if (_dictationKeyHeld == vk)
@@ -582,6 +583,8 @@ public sealed class LauncherService: IDisposable
 
                 if (vk == 0x1B)
                     _dispatcher.BeginInvoke(() => _shot?.Cancel());
+                else if (_keyboard.IsCtrlDown && vk == 0x41)
+                    _dispatcher.BeginInvoke(() => _shot?.SelectAll());
                 else if (_keyboard.IsCtrlDown && vk == 0x43)
                     _dispatcher.BeginInvoke(() => _shot?.Copy());
                 else if (_keyboard.IsCtrlDown && vk == 0x53)
@@ -630,6 +633,9 @@ public sealed class LauncherService: IDisposable
 
             if (ScreenshotStore.SuspendHotkey)
                 return false;
+
+            if (!_keyboard.IsCtrlDown && !ExtraModifierDown() && VoiceShiftLive.TryBareKey(vk))
+                return true;
 
             int dictVk = ScreenshotStore.Current.DictationHotkey;
             if (dictVk != 0

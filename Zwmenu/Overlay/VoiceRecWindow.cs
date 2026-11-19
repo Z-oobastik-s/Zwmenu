@@ -216,6 +216,13 @@ public sealed class VoiceRecWindow : Window
             Margin = new Thickness(0, 8, 0, 0),
             Children = { _stopBtn, Spacer(), _cancelBtn, Spacer(), _folderBtn }
         };
+        var voiceBtn = Pill("Другой голос", (_, _) => VoiceShiftWindow.ShowCurrent(), tip: "Тон для записи, звонков и игр");
+        var row3 = new StackPanel
+        {
+            Orientation = WpfOrientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 0),
+            Children = { voiceBtn }
+        };
 
         var headLeft = new StackPanel
         {
@@ -276,7 +283,7 @@ public sealed class VoiceRecWindow : Window
 
         var stack = new StackPanel
         {
-            Children = { head, _time, _status, levelBg, _pathHint, row1, row2 }
+            Children = { head, _time, _status, levelBg, _pathHint, row1, row2, row3 }
         };
 
         _card = new Border

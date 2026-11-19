@@ -93,6 +93,63 @@ public sealed class ScreenshotSettings
     /// <summary>Формат файла: wav16, wav24, mp3, m4a, flac, ogg.</summary>
     public string VoiceRecFormat { get; set; } = "mp3";
 
+    /// <summary>Тон изменителя голоса. 0 — свой.</summary>
+    public int VoiceShiftPreset { get; set; }
+
+    /// <summary>Сдвиг тона в полутонах, от -15 до 15.</summary>
+    public float VoiceShiftSemi { get; set; }
+
+    /// <summary>Громкость изменённого голоса, 1 — как вошло.</summary>
+    public float VoiceShiftGain { get; set; } = 1f;
+
+    /// <summary>Слышать изменённый голос в наушниках, пока он уходит в кабель.</summary>
+    public bool VoiceShiftHear { get; set; }
+
+    /// <summary>Отдача включена и поднимается снова при старте Zwmenu.</summary>
+    public bool VoiceShiftLiveOn { get; set; }
+
+    /// <summary>Клавиша, которая включает и выключает отдачу. 0 — нет.</summary>
+    public int VoiceShiftToggleKey { get; set; }
+
+    /// <summary>Пользователь отложил предложение поставить кабель. При включении голоса спросим снова.</summary>
+    public bool SetupCableLater { get; set; }
+
+    /// <summary>Куда отдавать изменённый голос. Пусто — виртуальный кабель, если он есть.</summary>
+    public string VoiceShiftOutId { get; set; } = "";
+
+    /// <summary>Какой физический микрофон брать. Пусто — тот, что Windows считает обычным.</summary>
+    public string VoiceShiftMicId { get; set; } = "";
+
+    /// <summary>Усиление входа до обработки. 1 — как пришло с микрофона.</summary>
+    public float VoiceShiftBoost { get; set; } = 1f;
+
+    /// <summary>Порог тишины. 0.007 как раньше, 0 выключает приглушение шума.</summary>
+    public float VoiceShiftGate { get; set; } = 0.007f;
+
+    /// <summary>Срез низкого гула, Гц.</summary>
+    public float VoiceShiftLowCut { get; set; } = 90f;
+
+    /// <summary>Насколько выравнивать громкие всплески. 0.62 как раньше, 0 без выравнивания.</summary>
+    public float VoiceShiftComp { get; set; } = 0.62f;
+
+    /// <summary>Громкость «слышать себя», 0.72 как раньше. На кабель в звонок не влияет.</summary>
+    public float VoiceShiftHearGain { get; set; } = 0.72f;
+
+    /// <summary>Куда играть «слышать себя». Пусто — первые обычные колонки или наушники.</summary>
+    public string VoiceShiftHearId { get; set; } = "";
+
+    /// <summary>Запас буфера, мс. 0 — само (90, а для голоса из библиотеки 280).</summary>
+    public int VoiceShiftLatencyMs { get; set; }
+
+    /// <summary>Микрофон системы до переключения. Возвращаем его, когда отдача гаснет.</summary>
+    public string VoiceShiftPrevMic { get; set; } = "";
+
+    /// <summary>Микрофон связи до переключения.</summary>
+    public string VoiceShiftPrevComm { get; set; } = "";
+
+    /// <summary>Старый номер устройства вывода. Остался для старых настроек.</summary>
+    public int VoiceShiftOutDevice { get; set; } = -1;
+
     /// <summary>Группа «Запуск» (частые программы) уже предложена.</summary>
     /// <summary>
     /// Боковая кнопка диктовки: 0 — не использовать, 1 — XButton1 (назад), 2 — XButton2 (вперёд).
@@ -353,6 +410,32 @@ public static class ScreenshotStore
             s.VoiceRecBitDepth = 16;
         s.VoiceRecFormat = NormalizeVoiceRecFormat(s.VoiceRecFormat, s.VoiceRecBitDepth);
         s.VoiceRecBitDepth = s.VoiceRecFormat is "wav24" ? 24 : 16;
+        s.VoiceShiftSemi = Math.Clamp(s.VoiceShiftSemi, -15f, 15f);
+        if (s.VoiceShiftGain < 0.4f || s.VoiceShiftGain > 2.2f)
+            s.VoiceShiftGain = 1f;
+        if (s.VoiceShiftPreset < 0)
+            s.VoiceShiftPreset = 0;
+        if (s.VoiceShiftToggleKey != 0 && !IsAllowedHotkey(s.VoiceShiftToggleKey))
+            s.VoiceShiftToggleKey = 0;
+        s.VoiceShiftOutId ??= "";
+        s.VoiceShiftMicId ??= "";
+        if (s.VoiceShiftBoost < 0.4f || s.VoiceShiftBoost > 4f)
+            s.VoiceShiftBoost = 1f;
+        if (s.VoiceShiftGate < 0f || s.VoiceShiftGate > 0.04f)
+            s.VoiceShiftGate = 0.007f;
+        if (s.VoiceShiftLowCut < 40f || s.VoiceShiftLowCut > 220f)
+            s.VoiceShiftLowCut = 90f;
+        if (s.VoiceShiftComp < 0f || s.VoiceShiftComp > 1.2f)
+            s.VoiceShiftComp = 0.62f;
+        if (s.VoiceShiftHearGain < 0f || s.VoiceShiftHearGain > 1f)
+            s.VoiceShiftHearGain = 0.72f;
+        s.VoiceShiftHearId ??= "";
+        if (s.VoiceShiftLatencyMs < 0 || s.VoiceShiftLatencyMs > 220)
+            s.VoiceShiftLatencyMs = 0;
+        else if (s.VoiceShiftLatencyMs is > 0 and < 40)
+            s.VoiceShiftLatencyMs = 40;
+        s.VoiceShiftPrevMic ??= "";
+        s.VoiceShiftPrevComm ??= "";
         s.DictationBufferMs = Math.Clamp(s.DictationBufferMs, 100, 500);
         s.DictationHudMs = Math.Clamp(s.DictationHudMs, 50, 500);
         s.DictationPasteDelayMs = Math.Clamp(s.DictationPasteDelayMs, 0, 500);

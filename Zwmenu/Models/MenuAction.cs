@@ -332,7 +332,7 @@ public sealed class MenuAction: INotifyPropertyChanged
             "Текстовые заготовки. Своя клавиша копирует или сразу вставляет.",
             ActionKind.Launch, SnippetsValue, "\uE70F", "#FF4E4668"));
         list.Add(Item(12, "Диктофон",
-            "Запись голоса с обработкой. Пауза, маркеры — файл на рабочий стол.",
+            "Запись голоса. Можно сменить тон и отдать его в звонок или игру.",
             ActionKind.Launch, VoiceRecValue, "\uE720", "#FF5A3E4E"));
         list.Add(Item(13, "Скрыть иконки",
             "Убрать значки и оставить одни обои. Повторный клик вернёт.",

@@ -48,6 +48,7 @@ public sealed class ShelfWindow : Window
     private readonly ItemsControl _list;
     private readonly ScrollViewer _scroller;
     private readonly Border _insert;
+    private readonly Border _stackMark;
     private readonly Border _ringCap;
     private readonly TextBlock _ringText;
     private double _baseArt = 64;
@@ -91,6 +92,10 @@ public sealed class ShelfWindow : Window
     private FileSystemWatcher? _watcher;
     private bool _wantOpen;
     private bool _dragged;
+    private bool _carry;
+    private ShelfTile? _carryTile;
+    private ShelfTile? _stackTarget;
+    private int _carryAt;
     private bool _selfDrop;
     private bool _dragCancelled;
     private string? _openStack;
@@ -150,6 +155,18 @@ public sealed class ShelfWindow : Window
             IsHitTestVisible = false,
             Visibility = Visibility.Collapsed
         };
+        _stackMark = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0xF0, 0xF2, 0xE2, 0xC4)),
+            BorderThickness = new Thickness(3),
+            CornerRadius = new CornerRadius(16),
+            Background = new SolidColorBrush(Color.FromArgb(0x38, 0xF2, 0xE2, 0xC4)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            VerticalAlignment = System.Windows.VerticalAlignment.Top,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed
+        };
+        Panel.SetZIndex(_stackMark, 30);
         _bar = new Border
         {
             CornerRadius = new CornerRadius(22),
@@ -187,6 +204,7 @@ public sealed class ShelfWindow : Window
         root.Children.Add(_bar);
         root.Children.Add(_scroller);
         root.Children.Add(_insert);
+        root.Children.Add(_stackMark);
         root.Children.Add(_ringCap);
         Content = root;
         MouseLeave += (_, _) => ClearRingHover();
@@ -207,6 +225,25 @@ public sealed class ShelfWindow : Window
                 HideInsert();
         };
         Drop += OnDrop;
+        PreviewMouseMove += (_, e) =>
+        {
+            if (_carry)
+                OnCarryMove(e);
+        };
+        PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (!_carry)
+                return;
+            FinishCarry();
+            e.Handled = true;
+        };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (!_carry || e.Key != Key.Escape)
+                return;
+            CancelCarry();
+            e.Handled = true;
+        };
         PreviewMouseLeftButtonDown += OnPress;
         SourceInitialized += (_, _) => ApplyToolStyle();
         Closed += (_, _) =>
@@ -431,7 +468,7 @@ public sealed class ShelfWindow : Window
             _ => WrapItems
         };
         StagePanel.SetKind(_list, _layout);
-        double pad = Math.Max(2, Math.Round(sized.art * 0.22));
+        double pad = Math.Max(4, Math.Round(sized.art * 0.08));
         foreach (var tile in _tiles)
             tile.SetPad(pad);
         _insert.Height = Math.Max(28, sized.art * 0.8);
@@ -1037,7 +1074,8 @@ public sealed class ShelfWindow : Window
         catch { return; }
 
         var prefs = ShelfFiles.CurrentLook();
-        var shown = ShelfArrange.Build(disk, prefs.Sort, prefs.Layout, prefs.KindOrder, _openStack);
+        var shown = ShelfArrange.Build(
+            disk, prefs.Sort, prefs.Layout, prefs.KindOrder, _openStack, prefs.Stacks, prefs.Loose);
         var have = _tiles.ToDictionary(t => t.Key, StringComparer.OrdinalIgnoreCase);
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < shown.Count; i++)
@@ -1553,7 +1591,7 @@ public sealed class ShelfWindow : Window
         _pressHost = null;
         if (!tile.Ghost && !File.Exists(tile.Launch) && !System.IO.Directory.Exists(tile.Launch))
             return;
-        DragTile(tile);
+        BeginCarry(tile);
     }
 
     private void DragTile(ShelfTile tile)
@@ -1592,6 +1630,7 @@ public sealed class ShelfWindow : Window
         }
 
         HideInsert();
+        HideStackMark();
         if (!tile.Ghost || _selfDrop || _dragCancelled)
             return;
         try
@@ -1603,6 +1642,312 @@ public sealed class ShelfWindow : Window
         {
             DesktopIcons.Toast("Не удалось вернуть на стол");
         }
+    }
+
+    private void BeginCarry(ShelfTile tile)
+    {
+        _carry = true;
+        _carryTile = tile;
+        _carryAt = _tiles.IndexOf(tile);
+        _stackTarget = null;
+        Mouse.Capture(this, CaptureMode.SubTree);
+        Mouse.OverrideCursor = Cursors.SizeAll;
+        ShowCarryHint(Mouse.GetPosition(this), "Сюда");
+    }
+
+    private void OnCarryMove(MouseEventArgs e)
+    {
+        if (!_carry || _carryTile == null)
+            return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishCarry();
+            return;
+        }
+
+        Point win = e.GetPosition(this);
+        if (win.X < -56 || win.Y < -56 || win.X > ActualWidth + 56 || win.Y > ActualHeight + 56)
+        {
+            var tile = _carryTile;
+            CancelCarry();
+            if (tile != null)
+                DragTile(tile);
+            return;
+        }
+
+        Point inList = e.GetPosition(_list);
+        var hit = TileUnder(inList);
+        bool onto = hit != null
+            && !ReferenceEquals(hit, _carryTile)
+            && !hit.IsHeader
+            && !hit.Ghost
+            && !_carryTile.Ghost
+            && hit.Members.Length > 0
+            && Centered(hit, inList)
+            && !SamePile(hit, _carryTile);
+        _stackTarget = onto ? hit : null;
+        if (onto)
+            HideInsert();
+        else
+        {
+            int next = IndexAt(inList);
+            if (next != _carryAt)
+            {
+                _carryAt = next;
+                PlaceInsert(_carryAt);
+            }
+        }
+
+        bool edge = win.X < 0 || win.Y < 0 || win.X > ActualWidth || win.Y > ActualHeight;
+        if (onto)
+            ShowStackMark(hit!);
+        else
+            HideStackMark();
+        ShowCarryHint(win, onto ? "Отпусти: сложится в «" + hit!.Name + "»" : edge ? "Дальше за край, на стол" : "Сюда, между значками");
+    }
+
+    private void FinishCarry()
+    {
+        var tile = _carryTile;
+        var target = _stackTarget;
+        int index = _carryAt;
+        CancelCarry();
+        if (tile == null)
+            return;
+        if (target != null && target.Members.Length > 0)
+        {
+            var incoming = new List<string>(target.Members);
+            incoming.AddRange(tile.Members);
+            string? id = ShelfFiles.Join(target.Members[0], incoming);
+            if (id != null)
+                _openStack = null;
+            Refresh();
+            return;
+        }
+
+        var prefs = ShelfFiles.LoadPrefs();
+        bool held = !tile.IsStack && ShelfArrange.Held(ShelfFiles.List(), tile.Key, prefs.Stacks, prefs.Loose);
+        string? anchor = AnchorKey(index, tile);
+        if (!ShelfFiles.MoveBlock(tile.Members, anchor))
+            return;
+        if (held)
+            ShelfFiles.Separate(tile.Key);
+        Refresh();
+    }
+
+    private void CancelCarry()
+    {
+        _carry = false;
+        _carryTile = null;
+        _stackTarget = null;
+        _hint = "";
+        if (Mouse.Captured == this)
+            Mouse.Capture(null);
+        Mouse.OverrideCursor = null;
+        HideInsert();
+        HideStackMark();
+        if (_layout != 15)
+            _ringCap.Visibility = Visibility.Collapsed;
+    }
+
+    private string _hint = "";
+
+    private void ShowCarryHint(Point inWindow, string text)
+    {
+        if (!string.Equals(_hint, text, StringComparison.Ordinal))
+        {
+            _hint = text;
+            _ringText.Text = text;
+            _ringText.FontSize = 13;
+            _ringCap.Measure(new System.Windows.Size(260, 40));
+        }
+
+        double w = Math.Max(36, _ringCap.DesiredSize.Width);
+        double x = Math.Clamp(inWindow.X + 14, 4, Math.Max(4, ActualWidth - w - 4));
+        double y = Math.Clamp(inWindow.Y - 34, 4, Math.Max(4, ActualHeight - 32));
+        _ringCap.Margin = new Thickness(x, y, 0, 0);
+        _ringCap.Visibility = Visibility.Visible;
+    }
+
+    private ShelfTile? TileUnder(Point inList)
+    {
+        ShelfTile? nearest = null;
+        double best = double.MaxValue;
+        for (int i = 0; i < _tiles.Count; i++)
+        {
+            if (_tiles[i].IsHeader)
+                continue;
+            if (_list.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement item)
+                continue;
+            Point origin = item.TranslatePoint(new Point(0, 0), _list);
+            if (inList.X < origin.X || inList.Y < origin.Y || inList.X > origin.X + item.ActualWidth || inList.Y > origin.Y + item.ActualHeight)
+                continue;
+            double dx = inList.X - (origin.X + item.ActualWidth / 2);
+            double dy = inList.Y - (origin.Y + item.ActualHeight / 2);
+            double dist = dx * dx + dy * dy;
+            if (dist >= best)
+                continue;
+            best = dist;
+            nearest = _tiles[i];
+        }
+
+        return nearest;
+    }
+
+    private bool Centered(ShelfTile tile, Point inList)
+    {
+        int index = _tiles.IndexOf(tile);
+        if (index < 0 || _list.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement item)
+            return false;
+        if (item.ActualWidth < 8 || item.ActualHeight < 8)
+            return false;
+        Point origin = item.TranslatePoint(new Point(0, 0), _list);
+        double nx = (inList.X - origin.X) / item.ActualWidth;
+        double ny = (inList.Y - origin.Y) / item.ActualHeight;
+        return nx is > 0.06 and < 0.94 && ny is > 0.04 and < 0.88;
+    }
+
+    private static bool SamePile(ShelfTile left, ShelfTile right)
+    {
+        if (left.Members.Length == 0 || right.Members.Length == 0)
+            return false;
+        foreach (string key in left.Members)
+        {
+            if (right.Members.Any(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
+    }
+
+    private string? AnchorKey(int index, ShelfTile carried)
+    {
+        int start = Math.Clamp(index, 0, _tiles.Count);
+        for (int i = start; i < _tiles.Count; i++)
+        {
+            var tile = _tiles[i];
+            if (tile.IsHeader || ReferenceEquals(tile, carried) || tile.Members.Length == 0)
+                continue;
+            return tile.Members[0];
+        }
+
+        return null;
+    }
+
+    private const uint MenuLeft = 0x7F10;
+    private const uint MenuRight = 0x7F11;
+    private const uint MenuApart = 0x7F12;
+    private const uint MenuGather = 0x7F13;
+    private const uint MenuBreak = 0x7F14;
+
+    private (uint Id, string Label)[] ShelfMenu(ShelfTile tile)
+    {
+        var prefs = ShelfFiles.LoadPrefs();
+        var disk = ShelfFiles.List();
+        bool held = !tile.IsStack && !tile.IsHeader && ShelfArrange.Held(disk, tile.Key, prefs.Stacks, prefs.Loose);
+        var list = new List<(uint Id, string Label)>();
+        if (tile.Members.Length > 0)
+        {
+            list.Add((MenuLeft, "Влево"));
+            list.Add((MenuRight, "Вправо"));
+        }
+
+        if (tile.IsStack)
+            list.Add((MenuBreak, "Разобрать стопку"));
+        else if (held)
+            list.Add((MenuApart, "Достать из стопки"));
+        else if (!tile.Ghost && ShelfFiles.IsLoose(tile.Key))
+            list.Add((MenuApart, "Можно складывать"));
+        else if (!tile.Ghost)
+            list.Add((MenuApart, "Держать отдельно"));
+        if (!tile.Ghost && tile.Launch.Length > 0)
+        {
+            string file = System.IO.Path.GetFileName(tile.Launch);
+            if (file.Length > 0)
+            {
+                var sample = new ShelfEntry(tile.Launch, file, 0, false, tile.Launch, "", false);
+                list.Add((MenuGather, ShelfArrange.GatherTitle(ShelfArrange.Bucket(sample))));
+            }
+        }
+
+        return list.ToArray();
+    }
+
+    private void RunShelfMenu(ShelfTile tile, uint id)
+    {
+        try
+        {
+            if (id == MenuLeft)
+                Nudge(tile, -1);
+            else if (id == MenuRight)
+                Nudge(tile, 1);
+            else if (id == MenuBreak)
+            {
+                ShelfFiles.Break(tile.Members);
+                if (string.Equals(_openStack, tile.Key, StringComparison.OrdinalIgnoreCase))
+                    _openStack = null;
+                Refresh();
+            }
+            else if (id == MenuApart)
+            {
+                var prefs = ShelfFiles.LoadPrefs();
+                bool held = ShelfArrange.Held(ShelfFiles.List(), tile.Key, prefs.Stacks, prefs.Loose);
+                if (!held && ShelfFiles.IsLoose(tile.Key))
+                    ShelfFiles.Release(tile.Key);
+                else
+                    ShelfFiles.Separate(tile.Key);
+                Refresh();
+            }
+            else if (id == MenuGather)
+            {
+                string key = tile.Launch.Length > 0 ? tile.Launch : tile.Key;
+                if (!ShelfFiles.GatherLike(key))
+                    DesktopIcons.Toast("Таких файлов меньше двух");
+                else
+                {
+                    _openStack = null;
+                    Refresh();
+                }
+            }
+        }
+        catch
+        {
+            DesktopIcons.Toast("Не вышло");
+        }
+    }
+
+    private void Nudge(ShelfTile tile, int dir)
+    {
+        int at = _tiles.IndexOf(tile);
+        if (at < 0 || tile.Members.Length == 0)
+            return;
+        int neighbor = -1;
+        for (int i = at + dir; i >= 0 && i < _tiles.Count; i += dir)
+        {
+            if (_tiles[i].IsHeader)
+                continue;
+            neighbor = i;
+            break;
+        }
+
+        if (neighbor < 0)
+            return;
+        string? anchor = null;
+        if (dir < 0)
+            anchor = _tiles[neighbor].Members.FirstOrDefault();
+        else
+        {
+            for (int i = neighbor + 1; i < _tiles.Count; i++)
+            {
+                if (_tiles[i].IsHeader || ReferenceEquals(_tiles[i], tile) || _tiles[i].Members.Length == 0)
+                    continue;
+                anchor = _tiles[i].Members[0];
+                break;
+            }
+        }
+
+        ShelfFiles.MoveBlock(tile.Members, anchor);
+        Refresh();
     }
 
     private int IndexAt(Point inList)
@@ -1659,6 +2004,24 @@ public sealed class ShelfWindow : Window
 
     private void HideInsert() => _insert.Visibility = Visibility.Collapsed;
 
+    private void ShowStackMark(ShelfTile tile)
+    {
+        int index = _tiles.IndexOf(tile);
+        if (index < 0 || _list.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement item)
+        {
+            _stackMark.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Point origin = item.TranslatePoint(new Point(0, 0), this);
+        _stackMark.Width = Math.Max(12, item.ActualWidth - 6);
+        _stackMark.Height = Math.Max(12, item.ActualHeight - 6);
+        _stackMark.Margin = new Thickness(origin.X + 3, origin.Y + 3, 0, 0);
+        _stackMark.Visibility = Visibility.Visible;
+    }
+
+    private void HideStackMark() => _stackMark.Visibility = Visibility.Collapsed;
+
     private void OnTileUp(object sender, MouseButtonEventArgs e)
     {
         var tile = _pressTile;
@@ -1712,6 +2075,7 @@ public sealed class ShelfWindow : Window
         string clsid = tile.Clsid;
         bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
         var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var more = ShelfMenu(tile);
         Dispatcher.BeginInvoke(() =>
         {
             try
@@ -1731,7 +2095,7 @@ public sealed class ShelfWindow : Window
                     }
 
                     Refresh();
-                });
+                }, more, id => RunShelfMenu(tile, id));
             }
             catch
             {
@@ -2881,6 +3245,7 @@ public sealed class ShelfWindow : Window
             IsHeader = spot.Entry == null;
             Launch = "";
             Clsid = "";
+            Members = Array.Empty<string>();
             _span = double.NaN;
             _band = double.NaN;
             _barWidth = double.NaN;
@@ -2895,6 +3260,7 @@ public sealed class ShelfWindow : Window
             StackPaths = spot.Stack ?? Array.Empty<string>();
             IsStack = StackPaths.Length >= 2;
             Badge = IsStack ? StackPaths.Length.ToString() : "";
+            Members = IsStack ? StackPaths : new[] { spot.Key };
         }
 
         public double Span
@@ -2975,6 +3341,7 @@ public sealed class ShelfWindow : Window
         public bool IsStack { get; }
         public string Badge { get; } = "";
         public string[] StackPaths { get; } = Array.Empty<string>();
+        public string[] Members { get; } = Array.Empty<string>();
         public Thickness PlateInset { get; private set; }
 
         public ImageSource? Icon

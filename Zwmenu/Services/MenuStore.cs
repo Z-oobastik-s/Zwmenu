@@ -462,7 +462,7 @@ public static class MenuStore
             {
                 list.Add(ItemLaunch(
                     "Диктофон",
-                    "Запись голоса с обработкой. Пауза, маркеры — файл на рабочий стол.",
+                    "Запись голоса. Можно сменить тон и отдать его в звонок или игру.",
                     MenuAction.VoiceRecValue,
                     "\uE720",
                     "#FF5A3E4E"));

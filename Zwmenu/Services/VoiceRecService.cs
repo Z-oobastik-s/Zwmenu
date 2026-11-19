@@ -121,7 +121,7 @@ public sealed class VoiceRecService : IDisposable
         if (!_monitor && State == VoiceRecState.Idle)
         {
             StopRecordingCapture(keepMonitor: false);
-            ScreenshotStore.SuspendDictationCapture = false;
+            ReleaseDictationHold();
             _tick.Stop();
             _levelPeak = 0;
             _levelRms = 0;
@@ -220,7 +220,7 @@ public sealed class VoiceRecService : IDisposable
         }
         catch (Exception ex)
         {
-            ScreenshotStore.SuspendDictationCapture = false;
+            ReleaseDictationHold();
             UiSounds.Suspended = false;
             Failed?.Invoke(ex.Message);
             CancelInternal(keepSuspend: false);
@@ -332,7 +332,7 @@ public sealed class VoiceRecService : IDisposable
         if (State == VoiceRecState.Idle && !_metering)
         {
             StopRecordingCapture(keepMonitor: false);
-            ScreenshotStore.SuspendDictationCapture = false;
+            ReleaseDictationHold();
             _tick.Stop();
             _levelPeak = 0;
             _levelRms = 0;
@@ -463,7 +463,7 @@ public sealed class VoiceRecService : IDisposable
         UiSounds.Suspended = false;
         if (!_monitor && !_metering)
         {
-            ScreenshotStore.SuspendDictationCapture = false;
+            ReleaseDictationHold();
             _tick.Stop();
         }
         else
@@ -520,12 +520,61 @@ public sealed class VoiceRecService : IDisposable
         {
             _tick.Stop();
             if (!keepSuspend)
-                ScreenshotStore.SuspendDictationCapture = false;
+                ReleaseDictationHold();
         }
+    }
+
+    private void ReleaseDictationHold()
+    {
+        if (VoiceShiftLive.Shared.Running)
+            return;
+        ScreenshotStore.SuspendDictationCapture = false;
+    }
+
+    /// <summary>Изменитель голоса забирает микрофон. Запись, если она идёт, продолжает писать уже обработанный звук.</summary>
+    public void YieldMicToShift()
+    {
+        WaveInEvent? wave;
+        lock (_gate)
+        {
+            wave = _waveIn;
+            _waveIn = null;
+        }
+
+        if (wave == null)
+            return;
+        try { wave.DataAvailable -= OnMicData; } catch { /* ignore */ }
+        try { wave.StopRecording(); } catch { /* ignore */ }
+        try { Thread.Sleep(30); } catch { /* ignore */ }
+        try { wave.Dispose(); } catch { /* ignore */ }
+    }
+
+    /// <summary>Уже изменённый звук с живого выхода: в запись и в монитор.</summary>
+    public void TakeShifted(float[] data, int count, float rawPeak)
+    {
+        if (count < 0)
+            return;
+        _levelPeakRaw = rawPeak;
+        Feed(data, count, rawPeak);
+    }
+
+    /// <summary>После выключения живого выхода вернуть микрофон записи, если он ещё нужен.</summary>
+    public void ShiftStopped()
+    {
+        if (State is VoiceRecState.Recording or VoiceRecState.Paused || _monitor || _metering)
+        {
+            try { EnsureMicRunning(); }
+            catch (Exception ex) { Failed?.Invoke("Микрофон: " + ex.Message); }
+        }
+        else
+            ReleaseDictationHold();
     }
 
     private void EnsureMicRunning()
     {
+        if (VoiceShiftLive.Shared.Running)
+            return;
+
         WaveInEvent wave;
         lock (_gate)
         {
@@ -601,24 +650,16 @@ public sealed class VoiceRecService : IDisposable
 
         _levelPeakRaw = rawPeak;
 
-        bool paused;
         bool recording;
         bool bypass;
         VoiceRecDsp? recordDsp;
         VoiceRecDsp? previewDsp;
-        VoiceRecFx? fx;
-        BufferedWaveProvider? mon;
         lock (_gate)
         {
-            paused = _paused;
             recording = State == VoiceRecState.Recording;
             bypass = _monitorBypass;
             recordDsp = _dsp;
             previewDsp = _previewDsp;
-            fx = _fx;
-            mon = _monitor ? _monitorBuf : null;
-            if (recording && rawPeak > _sessionPeakRaw)
-                _sessionPeakRaw = rawPeak;
         }
 
         // Цепочка: при записи — снимок; иначе живой превью из настроек.
@@ -630,6 +671,36 @@ public sealed class VoiceRecService : IDisposable
 
         if (chain != null)
             chain.ProcessBuffer(floats, samples);
+
+        if (!VoiceShiftLive.Shared.Running && VoiceShift.Shared.Active)
+        {
+            int shaped = VoiceShift.Shared.Process(floats, samples);
+            floats = VoiceShift.Shared.Ready;
+            samples = shaped;
+        }
+
+        Feed(floats, samples, rawPeak);
+    }
+
+    private void Feed(float[] floats, int samples, float rawPeak)
+    {
+        _levelPeakRaw = rawPeak;
+        if (samples <= 0 || floats == null)
+            return;
+
+        bool paused;
+        bool recording;
+        VoiceRecFx? fx;
+        BufferedWaveProvider? mon;
+        lock (_gate)
+        {
+            paused = _paused;
+            recording = State == VoiceRecState.Recording;
+            fx = _fx;
+            mon = _monitor && !VoiceShiftLive.Shared.Running ? _monitorBuf : null;
+            if (recording && rawPeak > _sessionPeakRaw)
+                _sessionPeakRaw = rawPeak;
+        }
 
         float peak = 0;
         double sum = 0;
@@ -644,12 +715,12 @@ public sealed class VoiceRecService : IDisposable
         _levelPeak = peak;
         _levelRms = (float)Math.Sqrt(sum / Math.Max(1, samples));
 
-        // Монитор: уже с эффектами (если не bypass), громкость из настроек.
         if (mon != null)
         {
             float monGain = Math.Clamp(fx?.MonitorVolume ?? 0.55f, 0.1f, 1f);
-            if (_monitorPcm.Length < e.BytesRecorded)
-                _monitorPcm = new byte[e.BytesRecorded];
+            int bytes = samples * 2;
+            if (_monitorPcm.Length < bytes)
+                _monitorPcm = new byte[bytes];
             var pcm = _monitorPcm;
             for (int i = 0; i < samples; i++)
             {
@@ -659,13 +730,12 @@ public sealed class VoiceRecService : IDisposable
                 pcm[i * 2 + 1] = (byte)((v >> 8) & 0xff);
             }
 
-            try { mon.AddSamples(pcm, 0, e.BytesRecorded); } catch { /* overflow */ }
+            try { mon.AddSamples(pcm, 0, bytes); } catch { /* overflow */ }
         }
 
         if (!recording || paused)
             return;
 
-        // Не пишем хвост клика по кнопке «Запись».
         if (Environment.TickCount64 < _recordArmTick)
             return;
 
@@ -682,7 +752,6 @@ public sealed class VoiceRecService : IDisposable
                 return;
             }
 
-            // Копия: _processBuf переиспользуется следующим колбэком.
             for (int i = 0; i < samples; i++)
                 _samples.Add(floats[i]);
         }

@@ -126,6 +126,213 @@ static class ShelfFiles
         SavePrefs(prefs);
     }
 
+    public static bool MoveBlock(IReadOnlyList<string> block, string? before)
+    {
+        var moving = RealKeys(block);
+        if (moving.Count == 0)
+            return false;
+        var current = List().Select(entry => entry.Key).ToList();
+        var keys = Splice(current, moving, before);
+        if (SameOrder(current, keys))
+            return false;
+        var prefs = LoadPrefs();
+        prefs.Order = keys;
+        prefs.Sort = 0;
+        SavePrefs(prefs);
+        return true;
+    }
+
+    internal static List<string> Splice(IReadOnlyList<string> order, IReadOnlyList<string> moving, string? before)
+    {
+        var keys = new List<string>(order);
+        foreach (string key in moving)
+            keys.RemoveAll(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+        int at = string.IsNullOrEmpty(before)
+            ? keys.Count
+            : keys.FindIndex(item => string.Equals(item, before, StringComparison.OrdinalIgnoreCase));
+        if (at < 0)
+            at = keys.Count;
+        keys.InsertRange(at, moving);
+        return keys;
+    }
+
+    private static bool SameOrder(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+        for (int i = 0; i < left.Count; i++)
+        {
+            if (!string.Equals(left[i], right[i], StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
+
+    public static string? Join(string onto, IReadOnlyList<string> incoming)
+    {
+        var keys = RealKeys(incoming);
+        if (!string.IsNullOrWhiteSpace(onto) && keys.All(item => !string.Equals(item, onto, StringComparison.OrdinalIgnoreCase)))
+            keys.Insert(0, onto);
+        keys = RealKeys(keys);
+        if (keys.Count < 2)
+            return null;
+        var prefs = LoadPrefs();
+        ShelfStack? host = null;
+        foreach (var pile in prefs.Stacks)
+        {
+            if (pile.Keys != null && pile.Keys.Any(item => string.Equals(item, onto, StringComparison.OrdinalIgnoreCase)))
+            {
+                host = pile;
+                break;
+            }
+        }
+
+        foreach (var pile in prefs.Stacks)
+        {
+            if (ReferenceEquals(pile, host) || pile.Keys == null)
+                continue;
+            pile.Keys.RemoveAll(item => keys.Any(key => string.Equals(item, key, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (host == null)
+        {
+            host = new ShelfStack { Id = "p" + Guid.NewGuid().ToString("N")[..8], Keys = keys };
+            prefs.Stacks.Add(host);
+        }
+        else
+        {
+            host.Keys ??= new List<string>();
+            foreach (string key in keys)
+            {
+                if (host.Keys.All(item => !string.Equals(item, key, StringComparison.OrdinalIgnoreCase)))
+                    host.Keys.Add(key);
+            }
+        }
+
+        prefs.Stacks.RemoveAll(pile => pile.Keys == null || pile.Keys.Count < 2);
+        prefs.Loose.RemoveAll(item => keys.Any(key => string.Equals(item, key, StringComparison.OrdinalIgnoreCase)));
+        SavePrefs(prefs);
+        return host.Id;
+    }
+
+    public static void Separate(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+        var prefs = LoadPrefs();
+        if (prefs.Loose.All(item => !string.Equals(item, key, StringComparison.OrdinalIgnoreCase)))
+            prefs.Loose.Add(key);
+        Pull(prefs, key);
+        SavePrefs(prefs);
+    }
+
+    public static void Release(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+        var prefs = LoadPrefs();
+        prefs.Loose.RemoveAll(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+        SavePrefs(prefs);
+    }
+
+    public static void Break(IReadOnlyList<string> keys)
+    {
+        var prefs = LoadPrefs();
+        foreach (string key in RealKeys(keys))
+        {
+            if (prefs.Loose.All(item => !string.Equals(item, key, StringComparison.OrdinalIgnoreCase)))
+                prefs.Loose.Add(key);
+            Pull(prefs, key);
+        }
+
+        SavePrefs(prefs);
+    }
+
+    public static bool GatherLike(string key)
+    {
+        var items = List();
+        int mine = -1;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (string.Equals(items[i].Key, key, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(items[i].Launch, key, StringComparison.OrdinalIgnoreCase))
+            {
+                mine = i;
+                break;
+            }
+        }
+
+        if (mine < 0 || items[mine].Ghost)
+            return false;
+        string bucket = ShelfArrange.Bucket(items[mine]);
+        var prefs = LoadPrefs();
+        var keys = new List<string>();
+        foreach (var entry in items)
+        {
+            if (entry.Ghost || ShelfArrange.Bucket(entry) != bucket)
+                continue;
+            bool loose = prefs.Loose.Any(item => string.Equals(item, entry.Key, StringComparison.OrdinalIgnoreCase));
+            if (loose && !string.Equals(entry.Key, items[mine].Key, StringComparison.OrdinalIgnoreCase))
+                continue;
+            keys.Add(entry.Key);
+        }
+
+        if (keys.Count < 2)
+            return false;
+        foreach (var pile in prefs.Stacks)
+            pile.Keys?.RemoveAll(item => keys.Any(one => string.Equals(item, one, StringComparison.OrdinalIgnoreCase)));
+        prefs.Stacks.RemoveAll(pile => pile.Keys == null || pile.Keys.Count < 2);
+        prefs.Loose.RemoveAll(item => keys.Any(one => string.Equals(item, one, StringComparison.OrdinalIgnoreCase)));
+        prefs.Stacks.Add(new ShelfStack
+        {
+            Id = "p" + Guid.NewGuid().ToString("N")[..8],
+            Name = ShelfArrange.BucketTitle(bucket),
+            Keys = keys
+        });
+        SavePrefs(prefs);
+        return true;
+    }
+
+    public static bool IsLoose(string key)
+    {
+        var prefs = LoadPrefs();
+        return prefs.Loose.Any(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void Pull(ShelfPrefs prefs, string key)
+    {
+        foreach (var pile in prefs.Stacks)
+            pile.Keys?.RemoveAll(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+        prefs.Stacks.RemoveAll(pile => pile.Keys == null || pile.Keys.Count < 2);
+    }
+
+    private static void Forget(ShelfPrefs prefs, string key)
+    {
+        Pull(prefs, key);
+        prefs.Loose.RemoveAll(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+        prefs.Order.RemoveAll(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> RealKeys(IReadOnlyList<string> keys)
+    {
+        var list = new List<string>();
+        foreach (string key in keys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+            if (key.StartsWith("pile:", StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith("stack:", StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith("head:", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (list.Any(item => string.Equals(item, key, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            list.Add(key);
+        }
+
+        return list;
+    }
+
     private static IReadOnlyList<ShelfEntry> ApplyOrder(List<ShelfEntry> items, ShelfPrefs prefs)
     {
         var map = new Dictionary<string, ShelfEntry>(StringComparer.OrdinalIgnoreCase);
@@ -254,9 +461,11 @@ static class ShelfFiles
             System.IO.Directory.Move(source, dest);
         else
             File.Move(source, dest);
+        var prefs = LoadPrefs();
+        Forget(prefs, source);
+        SavePrefs(prefs);
         return true;
     }
-
     public static ShelfPrefs CurrentLook()
     {
         var prefs = LoadPrefs();
@@ -282,7 +491,10 @@ static class ShelfFiles
             Left = cur.Left,
             Top = cur.Top,
             Ghosts = cur.Ghosts,
-            Order = cur.Order
+            Order = cur.Order,
+            KindOrder = cur.KindOrder,
+            Stacks = cur.Stacks,
+            Loose = cur.Loose
         });
     }
 
@@ -296,6 +508,10 @@ static class ShelfFiles
             var prefs = JsonSerializer.Deserialize<ShelfPrefs>(File.ReadAllText(path), Json) ?? new ShelfPrefs();
             prefs.Ghosts ??= new List<ShelfGhost>();
             prefs.Order ??= new List<string>();
+            prefs.Stacks ??= new List<ShelfStack>();
+            prefs.Loose ??= new List<string>();
+            foreach (var pile in prefs.Stacks)
+                pile.Keys ??= new List<string>();
             return prefs;
         }
         catch
@@ -364,6 +580,13 @@ sealed class ShelfGhost
     public string Name { get; set; } = "";
 }
 
+sealed class ShelfStack
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public List<string> Keys { get; set; } = new();
+}
+
 sealed class ShelfPrefs
 {
     public bool Open { get; set; }
@@ -372,7 +595,9 @@ sealed class ShelfPrefs
     public double Top { get; set; }
     public List<ShelfGhost> Ghosts { get; set; } = new();
     public List<string> Order { get; set; } = new();
-
+    public List<ShelfStack> Stacks { get; set; } = new();
+    /// <summary>Файлы, которые нельзя прятать в стопку, пока сам не разрешишь.</summary>
+    public List<string> Loose { get; set; } = new();
     /// <summary>Сторона значка, 32–96.</summary>
     public int Icon { get; set; } = 64;
     public int Rows { get; set; } = 3;
