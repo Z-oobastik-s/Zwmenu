@@ -192,7 +192,7 @@ public sealed class TrayMenuWindow : Window
         });
         wrap.Children.Add(new TextBlock
         {
-            Text = "Наведение смотрит. Клик копирует картинку. Alt+клик — текст. Правый клик — файл.",
+            Text = "Наведение показывает снимок. Клик копирует картинку. Alt и клик копируют текст. Правый клик открывает файл.",
             Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,

@@ -21,7 +21,7 @@ public sealed class GuideWindow : Window
         ShowActivated = false;
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
-        Width = 390;
+        Width = 460;
         SizeToContent = SizeToContent.Height;
         FontFamily = new FontFamily("Segoe UI");
         MouseEnter += (_, _) => _inside = true;
@@ -40,7 +40,7 @@ public sealed class GuideWindow : Window
         }
         catch
         {
-            cards.Children.Add(Line("—", "Настройки не прочитались. Меню откроется правым кликом."));
+            cards.Children.Add(Line("Памятка", "Настройки не прочитались. Меню откроется правым кликом по кубику у часов."));
         }
 
         var root = new Border
@@ -49,7 +49,7 @@ public sealed class GuideWindow : Window
             BorderBrush = TrayPaint.Brush(Color.FromRgb(0x3A, 0x3C, 0x40)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(14, 12, 14, 8),
+            Padding = new Thickness(16, 14, 16, 10),
             Effect = TrayPaint.Shadow(),
             Child = new StackPanel
             {
@@ -124,13 +124,20 @@ public sealed class GuideWindow : Window
 
     static UIElement TitleBlock()
     {
-        var stack = new StackPanel { Margin = new Thickness(2, 0, 2, 6) };
+        var stack = new StackPanel { Margin = new Thickness(2, 0, 2, 8) };
         stack.Children.Add(new TextBlock
         {
             Text = "Zwmenu",
             Foreground = TrayPaint.Brush(TemplateTheme.Fg),
             FontSize = 16,
             FontWeight = FontWeights.SemiBold
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Где что лежит, и что будет, если нажать.",
+            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
+            FontSize = 12,
+            Margin = new Thickness(0, 2, 0, 0)
         });
         return stack;
     }
@@ -141,27 +148,24 @@ public sealed class GuideWindow : Window
         {
             Text = gesture,
             Foreground = TrayPaint.Brush(TemplateTheme.AccentText),
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = System.Windows.VerticalAlignment.Center
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold
         };
         var body = new TextBlock
         {
             Text = text,
-            Foreground = TrayPaint.Brush(Color.FromRgb(0xD2, 0xD3, 0xD4)),
-            FontSize = 12,
+            Foreground = TrayPaint.Brush(Color.FromRgb(0xD8, 0xD9, 0xDA)),
+            FontSize = 12.5,
             TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = System.Windows.VerticalAlignment.Center
+            Margin = new Thickness(0, 2, 0, 0),
+            LineHeight = 17
         };
-        var row = new Grid();
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(body, 1);
+        var row = new StackPanel();
         row.Children.Add(mark);
         row.Children.Add(body);
         return new Border
         {
-            Padding = new Thickness(2, 5, 2, 5),
+            Padding = new Thickness(2, 7, 2, 7),
             BorderBrush = TrayPaint.Brush(Color.FromRgb(0x2A, 0x2C, 0x30)),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = row
@@ -171,46 +175,51 @@ public sealed class GuideWindow : Window
     static IEnumerable<(string Gesture, string Text)> Cards()
     {
         var shot = ScreenshotStore.Current;
+        string shotKey = ScreenshotStore.HotkeyTitle(shot.Hotkey);
+        string clipKey = ScreenshotStore.HotkeyTitle(shot.ClipHotkey);
+        string translateKey = ScreenshotStore.HotkeyTitle(shot.TranslateHotkey);
         string wheel = AppearanceStore.GetMiddleClickMode() switch
         {
-            MiddleButtonMode.Instant => "Колесо сразу по средней кнопке.",
-            MiddleButtonMode.Alt => "Колесо только с Alt и средней кнопкой.",
-            _ => "Подержи среднюю кнопку — откроется колесо. Короткий щелчок обычный."
+            MiddleButtonMode.Instant => "Нажатие сразу открывает круглое меню программ.",
+            MiddleButtonMode.Alt => "Круглое меню программ открывается только вместе с Alt.",
+            _ => "Подержи её чуть дольше обычного щелчка: откроется круглое меню программ. Короткий щелчок остаётся обычным кликом."
         };
-        yield return ("Значок", "Наведение — это окно. Правый клик — меню. Двойной — статус.");
-        yield return ("Колесо", wheel);
-        yield return (ScreenshotStore.HotkeyTitle(shot.Hotkey), "Снимок: рамка и копия. Пять последних лежат в меню значка.");
-        yield return (ScreenshotStore.HotkeyTitle(shot.ClipHotkey), "Короткое видео. Esc останавливает раньше.");
-        yield return (ScreenshotStore.HotkeyTitle(shot.TranslateHotkey), "Перевод текста, который уже скопирован.");
+        yield return ("Кубик у часов", "Значок Zwmenu в трее, рядом с часами. Наведение открывает эту памятку. Правый клик открывает меню. Двойной клик открывает статус.");
+        yield return ("Средняя кнопка мыши", wheel);
+        yield return ("Снимок экрана", "Клавиша " + shotKey + ". На экране рамка, выделенное копируется. Пять последних снимков лежат в меню кубика у часов.");
+        yield return ("Короткое видео", "Клавиша " + clipKey + ". Пишет кусок экрана. Esc останавливает запись раньше, чем она кончится сама.");
+        yield return ("Перевод", "Клавиша " + translateKey + ". Берёт текст, который уже скопирован, и предлагает перевод.");
         yield return (DictationGesture(shot), DictationBody(shot));
-        yield return ("Край", "Курсор и файлы переходят на второй ноутбук.");
-        string voice = shot.VoiceShiftToggleKey == 0 ? "Голос" : ScreenshotStore.HotkeyTitle(shot.VoiceShiftToggleKey);
-        yield return (voice, "Тембр микрофона. Включается в меню значка.");
-        yield return ("Ctrl", "На файле долгое удержание открывает действия. Ctrl+C не мешает.");
+        yield return ("Край монитора", "Уведи курсор за край экрана. Курсор и файлы переходят на второй ноутбук.");
+        yield return ("Тембр микрофона", VoiceBody(shot));
+        yield return ("Ctrl на файле", "Подержи Ctrl на файле или ярлыке: откроется круг действий. Ctrl+C копирует как обычно и этот круг не открывает.");
     }
 
     static string DictationGesture(ScreenshotSettings shot)
     {
-        string side = shot.DictationSideButton switch
-        {
-            1 => "Боковая",
-            2 => "Боковая 2",
-            _ => ""
-        };
-        if (side.Length > 0)
-            return side;
+        if (shot.DictationSideButton == 2)
+            return "Вторая боковая кнопка мыши";
+        if (shot.DictationSideButton == 1)
+            return "Боковая кнопка мыши";
         if (shot.DictationHotkey != 0)
-            return ScreenshotStore.HotkeyTitle(shot.DictationHotkey);
-        return "Нет";
+            return "Диктовка, клавиша " + ScreenshotStore.HotkeyTitle(shot.DictationHotkey);
+        return "Диктовка";
     }
 
     static string DictationBody(ScreenshotSettings shot)
     {
-        string extra = shot.DictationSideButton != 0 && shot.DictationHotkey != 0
-            ? " Ещё " + ScreenshotStore.HotkeyTitle(shot.DictationHotkey) + "."
-            : "";
         if (shot.DictationSideButton == 0 && shot.DictationHotkey == 0)
-            return "Не назначена. Зажал — говоришь, отпустил — текст в окне.";
-        return "Зажал — говоришь, отпустил — текст в окне." + extra;
+            return "Сейчас не назначена. В настройках ставится боковая кнопка мыши или клавиша. Зажал и говоришь, отпустил: текст в окне.";
+        string extra = shot.DictationSideButton != 0 && shot.DictationHotkey != 0
+            ? " То же делает клавиша " + ScreenshotStore.HotkeyTitle(shot.DictationHotkey) + "."
+            : "";
+        return "Зажми и говори. Отпусти: текст встанет в окно под курсором." + extra;
+    }
+
+    static string VoiceBody(ScreenshotSettings shot)
+    {
+        if (shot.VoiceShiftToggleKey == 0)
+            return "Меняет голос в микрофоне. Включается в меню кубика у часов.";
+        return "Клавиша " + ScreenshotStore.HotkeyTitle(shot.VoiceShiftToggleKey) + " включает его. Ещё он есть в меню кубика у часов.";
     }
 }

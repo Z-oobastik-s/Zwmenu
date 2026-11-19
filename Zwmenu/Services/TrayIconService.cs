@@ -4,7 +4,7 @@ using Zwmenu.Overlay;
 
 namespace Zwmenu.Services;
 
-/// <summary>Значок в трее. Меню и шпаргалка — свои окна, не стандартная полоска Windows.</summary>
+/// <summary>Значок в трее. Меню и памятка: свои окна, не стандартная полоска Windows.</summary>
 public sealed class TrayIconService : IDisposable
 {
     readonly NotifyIcon _icon;
@@ -84,7 +84,7 @@ public sealed class TrayIconService : IDisposable
         {
             _icon.Text = phase switch
             {
-                2 => "Zwmenu: идёт запись, Esc — стоп",
+                2 => "Zwmenu: идёт запись, Esc: стоп",
                 1 => "Zwmenu: готовлю запись",
                 _ => "Zwmenu"
             };
