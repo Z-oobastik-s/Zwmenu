@@ -1002,8 +1002,6 @@ public sealed class PhotoWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            if (Environment.TickCount64 < EdgeCapture.QuietEscapeUntil)
-                return;
             if (_cmp != CmpMode.Off)
                 StopCompare();
             else if (_metaOn)

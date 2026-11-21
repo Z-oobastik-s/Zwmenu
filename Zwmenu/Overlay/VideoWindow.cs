@@ -810,8 +810,6 @@ public sealed class VideoWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            if (Environment.TickCount64 < EdgeCapture.QuietEscapeUntil)
-                return;
             if (_moreOpen)
             {
                 ToggleMore();

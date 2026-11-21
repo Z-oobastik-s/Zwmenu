@@ -76,7 +76,7 @@ static class GameFocus
             return false;
         if (KnownGame(name) || _catalog.Contains(name))
             return true;
-        return CoversScreen(hwnd) && !HasCaption(hwnd);
+        return CoversScreen(hwnd);
     }
 
     private static bool KnownGame(string name)

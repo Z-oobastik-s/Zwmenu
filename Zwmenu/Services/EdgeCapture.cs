@@ -57,7 +57,6 @@ sealed class EdgeCapture : IDisposable
     private bool _pinned;
     private bool _mustLeave = true;
     private volatile bool _inHook;
-    internal static long QuietEscapeUntil;
     private bool _track;
     private int _trackX;
     private int _trackY;
@@ -605,6 +604,13 @@ sealed class EdgeCapture : IDisposable
             return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
         }
 
+        // Игра прячет курсор или сидит на весь экран. Край тогда не переход на второй ноутбук.
+        if (CursorHidden() || GameFocus.IsPlaying())
+        {
+            _pinned = false;
+            return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+        }
+
         _inHook = true;
         try
         {
@@ -819,7 +825,7 @@ sealed class EdgeCapture : IDisposable
             Task.Run(ReleaseHeldButton);
         }
         else
-            Task.Run(TapEscape);
+            Task.Run(CancelShellDrag);
 
         if (!clearSelection)
             return;
@@ -876,30 +882,30 @@ sealed class EdgeCapture : IDisposable
         }
     }
 
-    private void TapEscape()
+    private static void CancelShellDrag()
     {
-        QuietEscapeUntil = Environment.TickCount64 + 700;
-        ApplyKey(0x1B, 0, true, false);
-        ApplyKey(0x1B, 0, false, false);
+        CancelMode(GetCapture());
+        CancelMode(GetForegroundWindow());
     }
 
-    private static void NudgeCancelDrag()
-    {
-        QuietEscapeUntil = Environment.TickCount64 + 700;
-        IntPtr cap = GetCapture();
-        IntPtr fg = GetForegroundWindow();
-        Nudge(cap);
-        if (fg != cap)
-            Nudge(fg);
-    }
+    private static void NudgeCancelDrag() => CancelShellDrag();
 
-    private static void Nudge(IntPtr hwnd)
+    /// <summary>Снять рамку выделения проводника. Клавишу Esc чужим окнам не шлём: видео выходит из полного экрана.</summary>
+    private static void CancelMode(IntPtr hwnd)
     {
-        if (hwnd == IntPtr.Zero || BelongsHere(hwnd))
+        if (!IsShell(hwnd))
             return;
         PostMessage(hwnd, 0x001F, IntPtr.Zero, IntPtr.Zero);
-        PostMessage(hwnd, 0x0100, (IntPtr)0x1B, IntPtr.Zero);
-        PostMessage(hwnd, 0x0101, (IntPtr)0x1B, IntPtr.Zero);
+    }
+
+    private static bool IsShell(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || BelongsHere(hwnd))
+            return false;
+        var name = new System.Text.StringBuilder(64);
+        if (GetClassName(hwnd, name, name.Capacity) <= 0)
+            return false;
+        return name.ToString() is "CabinetWClass" or "ExploreWClass" or "Progman" or "WorkerW" or "Shell_TrayWnd";
     }
 
     private static bool BelongsHere(IntPtr hwnd)
@@ -1034,6 +1040,9 @@ sealed class EdgeCapture : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int capacity);
 
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);

@@ -947,8 +947,6 @@ public sealed class MusicWindow : Window
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            if (Environment.TickCount64 < Zwmenu.Services.EdgeCapture.QuietEscapeUntil)
-                return;
             if (_metaOn)
                 ToggleMeta();
             else
