@@ -110,10 +110,7 @@ public sealed class VoiceColor
 
     public static void Refresh()
     {
-        var list = new List<VoiceColor>(Built);
-        foreach (string name in VoiceRvc.Names())
-            list.Add(new VoiceColor(VoiceRvc.TitleOf(name), 0f, VoiceFx.None, default, VoiceRvc.Mark + name));
-        _all = list.ToArray();
+        _all = Built;
     }
 }
 
@@ -184,6 +181,7 @@ public sealed class VoiceShift
         VoiceColor.Refresh();
         int id = s.VoiceShiftPreset;
         string saved = s.VoiceShiftRvc ?? "";
+        bool found = false;
         if (saved.Length > 0)
         {
             for (int i = 0; i < VoiceColor.All.Count; i++)
@@ -191,13 +189,41 @@ public sealed class VoiceShift
                 if (VoiceColor.All[i].Model == VoiceRvc.Mark + saved)
                 {
                     id = i;
+                    found = true;
                     break;
                 }
             }
         }
 
+        bool dirty = saved.Length > 0 && !found;
+        if (dirty)
+            s.VoiceShiftRvc = "";
         if (id < 0 || id >= VoiceColor.All.Count)
+        {
             id = 0;
+            dirty = true;
+        }
+
+        string picked = VoiceColor.All[id].Model ?? "";
+        if (picked is "female_voice_old_hq.onnx" or "female_voice_old.onnx")
+        {
+            for (int i = 0; i < VoiceColor.All.Count; i++)
+            {
+                if (VoiceColor.All[i].Model == "female_voice_hfg_new.onnx")
+                {
+                    id = i;
+                    dirty = true;
+                    break;
+                }
+            }
+        }
+
+        if (dirty)
+        {
+            s.VoiceShiftPreset = id;
+            s.VoiceShiftRvc = "";
+            ScreenshotStore.Save(s);
+        }
         _preset = id;
         _fx = VoiceColor.All[id].Fx;
         LoadFace(id);

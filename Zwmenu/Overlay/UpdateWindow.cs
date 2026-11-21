@@ -116,8 +116,11 @@ public sealed class UpdateWindow : Window
         _offer = offer;
         _busy = false;
         _cancel?.Cancel();
-        _text.Text = "Вышла версия " + offer.Version + ". Сейчас стоит " + AppUpdate.Current
-            + ". Zwmenu закроется, поставит её и откроется снова.";
+        _text.Text = offer.Kind == UpdateKind.Patch
+            ? "Вышла версия " + offer.Version + ". Сейчас стоит " + AppUpdate.Current
+                + ". Скачаю только программу, без всего установщика. Zwmenu закроется и откроется снова."
+            : "Вышла версия " + offer.Version + ". Сейчас стоит " + AppUpdate.Current
+                + ". Zwmenu закроется, поставит её и откроется снова.";
         _track.Visibility = Visibility.Collapsed;
         _fill.Width = 0;
         _buttons.Children.Clear();
@@ -181,7 +184,7 @@ public sealed class UpdateWindow : Window
             }
 
             _text.Text = "Ставлю. Откроюсь снова и покажу, что обновление прошло.";
-            AppUpdate.StartInstaller(offer.Version);
+            AppUpdate.Start(offer);
             if (ExitForUpdate != null)
                 ExitForUpdate();
             else

@@ -16,7 +16,11 @@ public sealed class TrayMenuWindow : Window
 
     static TrayMenuWindow? _open;
     readonly StackPanel _main = new();
-    readonly StackPanel _voicePage = new() { Visibility = Visibility.Collapsed, Width = 480 };
+    readonly StackPanel _voicePage = new() { Width = 468 };
+    readonly ScrollViewer _voiceScroll;
+    readonly List<VoiceChip> _chips = new();
+    TextBlock? _toggleLabel;
+    TextBlock? _hearLabel;
     int _ax;
     int _ay;
     long _shownAt;
@@ -74,9 +78,12 @@ public sealed class TrayMenuWindow : Window
         }));
         _main.Children.Add(Row("Выход", () => { CloseMenu(); ExitRequested?.Invoke(); }, leave: true));
 
+        _voiceScroll = TrayPaint.HiddenScroll(_voicePage);
+        _voiceScroll.Visibility = Visibility.Collapsed;
+        _voiceScroll.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
         var pages = new Grid();
         pages.Children.Add(_main);
-        pages.Children.Add(_voicePage);
+        pages.Children.Add(_voiceScroll);
         Content = new Border
         {
             Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13)),
@@ -145,16 +152,20 @@ public sealed class TrayMenuWindow : Window
     {
         FillVoice();
         _main.Visibility = Visibility.Collapsed;
-        _voicePage.Visibility = Visibility.Visible;
+        _voiceScroll.Visibility = Visibility.Visible;
         Width = 496;
+        double room = TrayPaint.Room(_ax, _ay);
+        MaxHeight = room;
+        _voiceScroll.MaxHeight = Math.Max(240, room - 36);
         Fit();
     }
 
     void ShowList()
     {
-        _voicePage.Visibility = Visibility.Collapsed;
+        _voiceScroll.Visibility = Visibility.Collapsed;
         _main.Visibility = Visibility.Visible;
         Width = 332;
+        MaxHeight = TrayPaint.Room(_ax, _ay);
         Fit();
     }
 
@@ -353,41 +364,32 @@ public sealed class TrayMenuWindow : Window
         Grid.SetColumn(back, 1);
         head.Children.Add(back);
         _voicePage.Children.Add(head);
-        _voicePage.Children.Add(Row("Открыть настройки", () => VoiceShiftWindow.ShowCurrent()));
-        string toggle = VoiceShiftLive.Shared.Running ? "Выключить отдачу" : "Включить отдачу";
-        _voicePage.Children.Add(Row(toggle, () =>
+        _voicePage.Children.Add(Row("Открыть настройки", () =>
+        {
+            CloseMenu();
+            VoiceShiftWindow.ShowCurrent();
+        }));
+        var toggle = Row("", () =>
         {
             VoiceShiftLive.Shared.ToggleSaved();
-            Dispatcher.BeginInvoke(FillVoice);
-        }));
-        bool hear = ScreenshotStore.Current.VoiceShiftHear;
-        _voicePage.Children.Add(Row(hear ? "Не слышать себя" : "Слышать себя", () =>
+            PaintVoice();
+        });
+        _toggleLabel = (TextBlock)toggle.Child;
+        _voicePage.Children.Add(toggle);
+        var hear = Row("", () =>
         {
             VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
-            Dispatcher.BeginInvoke(FillVoice);
-        }));
+            PaintVoice();
+        });
+        _hearLabel = (TextBlock)hear.Child;
+        _voicePage.Children.Add(hear);
         VoiceColor.Refresh();
         KeepMila();
+        _chips.Clear();
         AddVoiceGroup("Девушки", color => color.Model == "female_voice_hfg_new.onnx");
-        AddOwnVoices();
         AddVoiceGroup("Образы", color => color.Model.Length == 0 && color.Face.On);
         AddVoiceGroup("Эффекты", color => color.Model.Length == 0 && !color.Face.On);
-    }
-
-    void AddOwnVoices()
-    {
-        bool any = false;
-        foreach (VoiceColor color in VoiceColor.All)
-        {
-            if (VoiceRvc.IsMark(color.Model))
-                any = true;
-        }
-
-        if (any)
-            AddVoiceGroup("Свои голоса", color => VoiceRvc.IsMark(color.Model));
-        var folder = Row(any ? "Открыть папку голосов" : "Свои голоса. Открыть папку", VoiceRvc.OpenFolder);
-        folder.Padding = new Thickness(8, 4, 8, 4);
-        _voicePage.Children.Add(folder);
+        PaintVoice();
     }
 
     static void KeepMila()
@@ -408,62 +410,91 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
+    void PaintVoice()
+    {
+        if (_toggleLabel != null)
+            _toggleLabel.Text = VoiceShiftLive.Shared.Running ? "Выключить отдачу" : "Включить отдачу";
+        if (_hearLabel != null)
+            _hearLabel.Text = ScreenshotStore.Current.VoiceShiftHear ? "Не слышать себя" : "Слышать себя";
+        int current = VoiceShift.Shared.Preset;
+        foreach (var chip in _chips)
+        {
+            bool on = chip.Index == current;
+            chip.Idle = TrayPaint.Brush(on ? Color.FromRgb(0x1A, 0x2E, 0x2A) : Color.FromRgb(0x1C, 0x1E, 0x22));
+            chip.Hot = TrayPaint.Brush(on ? Color.FromRgb(0x24, 0x3C, 0x36) : Color.FromRgb(0x2A, 0x2C, 0x32));
+            chip.Box.BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : Color.FromRgb(0x32, 0x34, 0x38));
+            chip.Label.Foreground = TrayPaint.Brush(on ? TemplateTheme.AccentText : TemplateTheme.Fg);
+            chip.Box.Background = chip.Box.IsMouseOver ? chip.Hot : chip.Idle;
+        }
+    }
+
     void AddVoiceGroup(string title, Func<VoiceColor, bool> take)
     {
-        var wrap = new WrapPanel { ItemWidth = 160, ItemHeight = 34, Margin = new Thickness(0, 0, 0, 2) };
-        int current = VoiceShift.Shared.Preset;
+        var wrap = new WrapPanel { ItemWidth = 156, ItemHeight = 34, Margin = new Thickness(0, 0, 0, 2) };
         bool any = false;
         for (int i = 0; i < VoiceColor.All.Count; i++)
         {
             if (!take(VoiceColor.All[i]))
                 continue;
             any = true;
-            int index = i;
-            bool on = i == current;
-            var idle = TrayPaint.Brush(on ? Color.FromRgb(0x1A, 0x2E, 0x2A) : Color.FromRgb(0x1C, 0x1E, 0x22));
-            var hot = TrayPaint.Brush(on ? Color.FromRgb(0x24, 0x3C, 0x36) : Color.FromRgb(0x2A, 0x2C, 0x32));
-            var chip = new Border
+            var chip = new VoiceChip
             {
-                Background = idle,
-                BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : Color.FromRgb(0x32, 0x34, 0x38)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Margin = new Thickness(3, 2, 3, 2),
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-                VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
-                Cursor = Cursors.Hand,
-                Child = new TextBlock
+                Index = i,
+                Label = new TextBlock
                 {
                     Text = VoiceColor.All[i].Title,
-                    Foreground = TrayPaint.Brush(on ? TemplateTheme.AccentText : TemplateTheme.Fg),
                     FontSize = 12.5,
                     HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                     VerticalAlignment = System.Windows.VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 }
             };
-            chip.MouseEnter += (_, _) => chip.Background = hot;
-            chip.MouseLeave += (_, _) => chip.Background = idle;
-            chip.MouseLeftButtonUp += (_, e) =>
+            chip.Box = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(3, 2, 3, 2),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+                VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+                Cursor = Cursors.Hand,
+                Child = chip.Label
+            };
+            var held = chip;
+            held.Box.MouseEnter += (_, _) => held.Box.Background = held.Hot;
+            held.Box.MouseLeave += (_, _) => held.Box.Background = held.Idle;
+            held.Box.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
-                VoiceShift.Shared.ApplyPreset(index);
-                Dispatcher.BeginInvoke(FillVoice);
+                VoiceShift.Shared.ApplyPreset(held.Index);
+                PaintVoice();
             };
-            wrap.Children.Add(chip);
+            _chips.Add(chip);
+            wrap.Children.Add(chip.Box);
         }
 
         if (!any)
             return;
         if (title.Length > 0)
-        _voicePage.Children.Add(new TextBlock
         {
-            Text = title,
-            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
-            FontSize = 11.5,
-            Margin = new Thickness(8, 4, 8, 1)
-        });
+            _voicePage.Children.Add(new TextBlock
+            {
+                Text = title,
+                Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
+                FontSize = 11.5,
+                Margin = new Thickness(8, 4, 8, 1)
+            });
+        }
+
         _voicePage.Children.Add(wrap);
+    }
+
+    sealed class VoiceChip
+    {
+        public Border Box = null!;
+        public TextBlock Label = null!;
+        public int Index;
+        public Brush Idle = Brushes.Transparent;
+        public Brush Hot = Brushes.Transparent;
     }
 
     static Border Row(string text, Action click, bool leave = false)

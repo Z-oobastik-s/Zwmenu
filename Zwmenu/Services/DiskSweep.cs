@@ -10,14 +10,18 @@ public static class DiskSweep
     public static void Run()
     {
         DropOldSetups(Path.GetTempPath(), keepNewest: true);
+        DropOldPatches(Path.GetTempPath(), keepNewest: true);
         DropLooseTemp(Path.GetTempPath(), DateTime.UtcNow.AddHours(-2));
         DropAppTemp(Path.Combine(Path.GetTempPath(), "Zwmenu"));
         DropToolLeftovers();
     }
 
-    /// <summary>Перед новой загрузкой оставляем только тот установщик, который сейчас качаем.</summary>
-    public static void KeepOnly(Version version) =>
+    /// <summary>Перед новой загрузкой оставляем только тот файл, который сейчас качаем.</summary>
+    public static void KeepOnly(Version version)
+    {
         DropOldSetups(Path.GetTempPath(), keepNewest: false, keep: version);
+        DropOldPatches(Path.GetTempPath(), keepNewest: false, keep: version);
+    }
 
     public static void SelfCheck()
     {
@@ -40,11 +44,18 @@ public static class DiskSweep
                 throw new InvalidOperationException("чужой файл удалён");
 
             File.WriteAllText(Path.Combine(dir, "Zwmenu-Setup-9.0.0.exe"), "later");
+            File.WriteAllText(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip"), "oldpatch");
+            File.WriteAllText(Path.Combine(dir, "Zwmenu-Patch-1.0.1.zip"), "keeppatch");
             DropOldSetups(dir, keepNewest: false, keep: new Version(1, 0, 1));
+            DropOldPatches(dir, keepNewest: false, keep: new Version(1, 0, 1));
             if (File.Exists(Path.Combine(dir, "Zwmenu-Setup-9.0.0.exe")))
                 throw new InvalidOperationException("чужая версия осталась");
             if (!File.Exists(Path.Combine(dir, "Zwmenu-Setup-1.0.1.exe")))
                 throw new InvalidOperationException("нужная версия удалена");
+            if (File.Exists(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip")))
+                throw new InvalidOperationException("старая заплатка осталась");
+            if (!File.Exists(Path.Combine(dir, "Zwmenu-Patch-1.0.1.zip")))
+                throw new InvalidOperationException("нужная заплатка удалена");
         }
         finally
         {
@@ -113,6 +124,67 @@ public static class DiskSweep
         return Version.TryParse(tail, out version!);
     }
 
+    static void DropOldPatches(string dir, bool keepNewest, Version? keep = null)
+    {
+        string[] files;
+        try
+        {
+            files = Directory.Exists(dir) ? Directory.GetFiles(dir, "Zwmenu-Patch-*") : Array.Empty<string>();
+        }
+        catch
+        {
+            return;
+        }
+
+        Version? newest = keep;
+        if (keepNewest)
+        {
+            foreach (string file in files)
+            {
+                if (!TryPatchVersion(Path.GetFileName(file), out var version, out bool partial) || partial)
+                    continue;
+                if (newest == null || version > newest)
+                    newest = version;
+            }
+        }
+
+        foreach (string file in files)
+        {
+            if (!TryPatchVersion(Path.GetFileName(file), out var version, out bool partial))
+                continue;
+            if (keep != null && version == keep)
+                continue;
+            if (keepNewest && newest != null && version == newest && !partial)
+                continue;
+            TryDeleteFile(file);
+        }
+    }
+
+    static bool TryPatchVersion(string name, out Version version, out bool partial)
+    {
+        version = new Version(0, 0);
+        partial = false;
+        const string head = "Zwmenu-Patch-";
+        if (!name.StartsWith(head, StringComparison.OrdinalIgnoreCase))
+            return false;
+        string tail = name[head.Length..];
+        if (tail.EndsWith(".zip.part", StringComparison.OrdinalIgnoreCase))
+        {
+            partial = true;
+            tail = tail[..^".zip.part".Length];
+        }
+        else if (tail.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            tail = tail[..^".zip".Length];
+        }
+        else
+        {
+            return false;
+        }
+
+        return Version.TryParse(tail, out version!);
+    }
+
     static void DropLooseTemp(string temp, DateTime olderThanUtc)
     {
         try
@@ -135,6 +207,7 @@ public static class DiskSweep
                     || name.StartsWith("zwmenu-hold-", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("zwmenu-bg-", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("zwmenu-sweep-", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("zwmenu-patch-", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("zwmenu cmd ", StringComparison.OrdinalIgnoreCase);
                 if (!junk || !OlderThan(child, olderThanUtc))
                     continue;

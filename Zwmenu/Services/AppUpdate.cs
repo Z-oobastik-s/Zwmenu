@@ -1,24 +1,36 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Zwmenu.Overlay;
 
 namespace Zwmenu.Services;
+
+public enum UpdateKind
+{
+    Setup,
+    Patch
+}
 
 public sealed class UpdateOffer
 {
     public required Version Version { get; init; }
     public required string Url { get; init; }
     public required long Size { get; init; }
+    public required UpdateKind Kind { get; init; }
 }
 
 /// <summary>Смотрит последний релиз на GitHub и скачивает установщик.</summary>
 public static class AppUpdate
 {
     public const string AssetName = "Zwmenu-Setup.exe";
+    public const string PatchName = "Zwmenu-Patch.zip";
+    static readonly Version PatchFloor = new(1, 3, 65);
     const string LatestUrl = "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/latest";
+    static readonly string[] PatchFiles = { "Zwmenu.exe", "Zwmenu.dll", "Zwmenu.deps.json", "Zwmenu.runtimeconfig.json", "Zwmenu.Thumbs.dll" };
 
     static readonly HttpClient Http = CreateClient();
     static int _checking;
@@ -145,8 +157,10 @@ public static class AppUpdate
         if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
             return false;
         var path = uri.AbsolutePath;
-        return path.StartsWith("/Z-oobastik-s/Zwmenu/releases/download/", StringComparison.OrdinalIgnoreCase)
-            && path.EndsWith("/" + AssetName, StringComparison.OrdinalIgnoreCase);
+        if (!path.StartsWith("/Z-oobastik-s/Zwmenu/releases/download/", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return path.EndsWith("/" + AssetName, StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/" + PatchName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool ShouldOffer(Version latest, Version current, Version? skipped, bool manual)
@@ -191,10 +205,17 @@ public static class AppUpdate
             if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
                 return false;
 
+            UpdateOffer? setup = null;
+            UpdateOffer? patch = null;
             foreach (var asset in assets.EnumerateArray())
             {
                 var name = asset.TryGetProperty("name", out var nameNode) ? nameNode.GetString() : null;
-                if (!string.Equals(name, AssetName, StringComparison.OrdinalIgnoreCase))
+                UpdateKind kind;
+                if (string.Equals(name, AssetName, StringComparison.OrdinalIgnoreCase))
+                    kind = UpdateKind.Setup;
+                else if (string.Equals(name, PatchName, StringComparison.OrdinalIgnoreCase))
+                    kind = UpdateKind.Patch;
+                else
                     continue;
                 var url = asset.TryGetProperty("browser_download_url", out var urlNode) ? urlNode.GetString() : null;
                 if (string.IsNullOrWhiteSpace(url) || !IsTrusted(url))
@@ -202,7 +223,22 @@ public static class AppUpdate
                 long size = 0;
                 if (asset.TryGetProperty("size", out var sizeNode) && sizeNode.TryGetInt64(out var parsed))
                     size = parsed;
-                offer = new UpdateOffer { Version = version, Url = url, Size = size };
+                var found = new UpdateOffer { Version = version, Url = url, Size = size, Kind = kind };
+                if (kind == UpdateKind.Patch)
+                    patch = found;
+                else
+                    setup = found;
+            }
+
+            if (patch != null && Current >= PatchFloor && patch.Size > 0 && patch.Size < 40_000_000)
+            {
+                offer = patch;
+                return true;
+            }
+
+            if (setup != null)
+            {
+                offer = setup;
                 return true;
             }
         }
@@ -220,8 +256,8 @@ public static class AppUpdate
             throw new InvalidDataException("url");
 
         DiskSweep.KeepOnly(offer.Version);
-        var finalPath = SetupPath(offer.Version);
-        if (Ready(finalPath, offer.Size))
+        var finalPath = AssetPath(offer);
+        if (Ready(finalPath, offer))
         {
             progress.Report((Math.Max(offer.Size, 1), Math.Max(offer.Size, 1)));
             return;
@@ -259,6 +295,14 @@ public static class AppUpdate
         throw last ?? new IOException("download");
     }
 
+    public static void Start(UpdateOffer offer)
+    {
+        if (offer.Kind == UpdateKind.Patch)
+            StartPatch(offer.Version);
+        else
+            StartInstaller(offer.Version);
+    }
+
     public static void StartInstaller(Version version)
     {
         var path = SetupPath(version);
@@ -274,6 +318,68 @@ public static class AppUpdate
         });
     }
 
+    static void StartPatch(Version version)
+    {
+        var zipPath = PatchPath(version);
+        var install = Path.GetDirectoryName(Environment.ProcessPath);
+        if (string.IsNullOrEmpty(install))
+            install = Path.GetDirectoryName(typeof(AppUpdate).Assembly.Location);
+        if (string.IsNullOrEmpty(install) || install.Contains('"') || zipPath.Contains('"'))
+            throw new InvalidOperationException("path");
+        var stage = Path.Combine(Path.GetTempPath(), "zwmenu-patch-" + version);
+        if (Directory.Exists(stage))
+            Directory.Delete(stage, true);
+        Directory.CreateDirectory(stage);
+        using (var zip = ZipFile.OpenRead(zipPath))
+        {
+            foreach (var entry in zip.Entries)
+            {
+                string name = entry.FullName.Replace('\\', '/').Trim('/');
+                if (name.Length == 0 || entry.Length == 0)
+                    continue;
+                if (name.Contains('/') || name.Contains("..", StringComparison.Ordinal))
+                    throw new InvalidDataException("zip");
+                if (Array.IndexOf(PatchFiles, name) < 0)
+                    throw new InvalidDataException("zip");
+            }
+        }
+
+        ZipFile.ExtractToDirectory(zipPath, stage, true);
+        if (!File.Exists(Path.Combine(stage, "Zwmenu.exe")) || !File.Exists(Path.Combine(stage, "Zwmenu.dll")))
+            throw new InvalidDataException("zip");
+        var bat = Path.Combine(Path.GetTempPath(), "zwmenu-patch-apply.bat");
+        var text = new StringBuilder();
+        text.AppendLine("@echo off");
+        text.AppendLine("set N=0");
+        text.AppendLine(":again");
+        text.AppendLine("set /a N=N+1");
+        text.AppendLine("ping 127.0.0.1 -n 2 >nul");
+        text.AppendLine("set BAD=0");
+        foreach (var name in PatchFiles)
+        {
+            var from = Path.Combine(stage, name);
+            if (!File.Exists(from))
+                continue;
+            text.Append("copy /Y \"").Append(from).Append("\" \"").Append(Path.Combine(install, name)).AppendLine("\" >nul");
+            text.AppendLine("if errorlevel 1 set BAD=1");
+        }
+
+        text.AppendLine("if %BAD%==0 goto copied");
+        text.AppendLine("if %N% lss 10 goto again");
+        text.AppendLine(":copied");
+        text.Append("start \"\" \"").Append(Path.Combine(install, "Zwmenu.exe")).AppendLine("\" --updated");
+        text.Append("rd /s /q \"").Append(stage).AppendLine("\"");
+        File.WriteAllText(bat, text.ToString(), Encoding.Unicode);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            Arguments = "/c \"" + bat + "\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        });
+    }
+
     public static void RememberSkip(Version version)
     {
         var path = SkipPath();
@@ -283,6 +389,12 @@ public static class AppUpdate
 
     public static string SetupPath(Version version) =>
         Path.Combine(Path.GetTempPath(), "Zwmenu-Setup-" + version + ".exe");
+
+    public static string PatchPath(Version version) =>
+        Path.Combine(Path.GetTempPath(), "Zwmenu-Patch-" + version + ".zip");
+
+    static string AssetPath(UpdateOffer offer) =>
+        offer.Kind == UpdateKind.Patch ? PatchPath(offer.Version) : SetupPath(offer.Version);
 
     public static void SelfCheck()
     {
@@ -310,8 +422,17 @@ public static class AppUpdate
         const string json = """
             {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Setup.exe","size":123456789}]}
             """;
-        if (!TryParseLatest(json, out var offer) || offer.Version != new Version(9, 9, 9) || offer.Size != 123456789)
+        if (!TryParseLatest(json, out var offer) || offer.Version != new Version(9, 9, 9) || offer.Size != 123456789 || offer.Kind != UpdateKind.Setup)
             throw new InvalidOperationException("разбор релиза");
+        const string both = """
+            {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Setup.exe","size":123456789},{"name":"Zwmenu-Patch.zip","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Patch.zip","size":2500000}]}
+            """;
+        if (!TryParseLatest(both, out var picked) || picked.Kind != UpdateKind.Patch || picked.Size != 2500000)
+            throw new InvalidOperationException("заплатка не выбрана");
+        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/Zwmenu-Patch.zip"))
+            throw new InvalidOperationException("адрес заплатки отвергнут");
+        if (IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/notes.zip"))
+            throw new InvalidOperationException("чужой архив принят");
         if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"readme.txt","browser_download_url":"https://example.invalid/readme.txt","size":10}]}""", out _))
             throw new InvalidOperationException("релиз без установщика принят");
         if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://evil.example/Zwmenu-Setup.exe","size":123456789}]}""", out _))
@@ -386,7 +507,7 @@ public static class AppUpdate
             progress.Report((got, total));
         try
         {
-            Finish(partial, finalPath, offer.Size);
+            Finish(partial, finalPath, offer);
         }
         catch (InvalidDataException)
         {
@@ -395,16 +516,12 @@ public static class AppUpdate
         }
     }
 
-    static void Finish(string partial, string finalPath, long expected)
+    static void Finish(string partial, string finalPath, UpdateOffer offer)
     {
         using (var check = File.OpenRead(partial))
         {
-            if (check.Length < 1_000_000)
-                throw new InvalidDataException("small");
-            if (expected > 0 && check.Length != expected)
-                throw new InvalidDataException("size");
-            if (check.ReadByte() != 'M' || check.ReadByte() != 'Z')
-                throw new InvalidDataException("exe");
+            if (!LooksRight(check, offer))
+                throw new InvalidDataException("file");
         }
 
         if (File.Exists(finalPath))
@@ -412,23 +529,33 @@ public static class AppUpdate
         File.Move(partial, finalPath);
     }
 
-    static bool Ready(string path, long expected)
+    static bool Ready(string path, UpdateOffer offer)
     {
         try
         {
             if (!File.Exists(path))
                 return false;
             using var check = File.OpenRead(path);
-            if (check.Length < 1_000_000)
-                return false;
-            if (expected > 0 && check.Length != expected)
-                return false;
-            return check.ReadByte() == 'M' && check.ReadByte() == 'Z';
+            return LooksRight(check, offer);
         }
         catch
         {
             return false;
         }
+    }
+
+    static bool LooksRight(Stream check, UpdateOffer offer)
+    {
+        long min = offer.Kind == UpdateKind.Patch ? 200_000 : 1_000_000;
+        if (check.Length < min)
+            return false;
+        if (offer.Size > 0 && check.Length != offer.Size)
+            return false;
+        int a = check.ReadByte();
+        int b = check.ReadByte();
+        if (offer.Kind == UpdateKind.Patch)
+            return a == 'P' && b == 'K';
+        return a == 'M' && b == 'Z';
     }
 
     static void TryDelete(string path)

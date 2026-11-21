@@ -24,6 +24,42 @@ $exe = Join-Path $root "publish\win-x64\Zwmenu.exe"
 $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).FileVersion
 if ($fileVersion -ne "${version}.0") { throw "V programme versiya $fileVersion, a v proekte $version" }
 
+$patch = Join-Path $root "dist\Zwmenu-Patch.zip"
+$stage = Join-Path $env:TEMP ("zwmenu-patch-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $root "dist") | Out-Null
+$pub = Join-Path $root "publish\win-x64"
+foreach ($name in @("Zwmenu.exe", "Zwmenu.dll", "Zwmenu.deps.json", "Zwmenu.runtimeconfig.json", "Zwmenu.Thumbs.dll")) {
+  $src = Join-Path $pub $name
+  if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination (Join-Path $stage $name) }
+}
+if (-not (Test-Path -LiteralPath (Join-Path $stage "Zwmenu.exe"))) { throw "V zaplate net Zwmenu.exe" }
+if (-not (Test-Path -LiteralPath (Join-Path $stage "Zwmenu.dll"))) { throw "V zaplate net Zwmenu.dll" }
+if (Test-Path -LiteralPath $patch) { Remove-Item -LiteralPath $patch -Force }
+Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $patch
+Remove-Item -LiteralPath $stage -Recurse -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [IO.Compression.ZipFile]::OpenRead($patch)
+try {
+  $allowed = @("Zwmenu.exe", "Zwmenu.dll", "Zwmenu.deps.json", "Zwmenu.runtimeconfig.json", "Zwmenu.Thumbs.dll")
+  $seenExe = $false
+  $seenDll = $false
+  foreach ($entry in $zip.Entries) {
+    $name = $entry.FullName.Replace('\', '/').Trim('/')
+    if ($name.Length -eq 0) { continue }
+    if ($allowed -notcontains $name) { throw "V zaplate lishniy fail: $name" }
+    if ($name -eq "Zwmenu.exe") { $seenExe = $true }
+    if ($name -eq "Zwmenu.dll") { $seenDll = $true }
+  }
+  if (-not $seenExe -or -not $seenDll) { throw "V zaplate net programmy" }
+} finally {
+  $zip.Dispose()
+}
+$patchSize = (Get-Item -LiteralPath $patch).Length
+if ($patchSize -lt 200000) { throw "Zaplatka slishkom malenka" }
+if ($patchSize -ge 40000000) { throw "Zaplatka slishkom bolsha" }
+Write-Output ("Zaplatka gotova, " + $patchSize + " bait")
+
 Write-Output "Sobirayu ustanovshik"
 & (Join-Path $root "tools\innosetup\ISCC.exe") (Join-Path $root "installer\Zwmenu.iss")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -50,7 +86,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-Меню голоса остаётся открытым, пока выбираешь тембр. Светлая и Мягкая убраны, у Милы меньше хрипа.
+Пять своих голосов убраны: они не переделывали речь. Меню голоса крутится колёсиком и не обрезается. Следующее обновление качает только программу, без всего установщика.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta
@@ -60,22 +96,31 @@ try {
   }
 
   $rel = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
-  $has = $false
+  $hasSetup = $false
+  $hasPatch = $false
   if ($rel.assets) {
     foreach ($asset in $rel.assets) {
-      if ($asset.name -eq "Zwmenu-Setup.exe") { $has = $true }
+      if ($asset.name -eq "Zwmenu-Setup.exe") { $hasSetup = $true }
+      if ($asset.name -eq "Zwmenu-Patch.zip") { $hasPatch = $true }
     }
   }
-  if ($has) {
-    Write-Output "Reliz v${version} uzhe s ustanovshikom: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v${version}"
-    exit 0
+
+  if (-not $hasSetup) {
+    Write-Output "Zagruzhayu ustanovshik"
+    $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Setup.exe"
+    $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/octet-stream" --data-binary "@$setup" $upload
+    if ($LASTEXITCODE -ne 0) { throw "Zagruzka oborvalas" }
+    if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal ustanovshik ($code)" }
   }
 
-  Write-Output "Zagruzhayu ustanovshik"
-  $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Setup.exe"
-  $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/octet-stream" --data-binary "@$setup" $upload
-  if ($LASTEXITCODE -ne 0) { throw "Zagruzka oborvalas" }
-  if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal ustanovshik ($code)" }
+  if (-not $hasPatch) {
+    Write-Output "Zagruzhayu zaplatku"
+    $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Patch.zip"
+    $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/zip" --data-binary "@$patch" $upload
+    if ($LASTEXITCODE -ne 0) { throw "Zagruzka zaplatki oborvalas" }
+    if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal zaplatku ($code)" }
+  }
+
   Write-Output "Reliz v${version}: https://github.com/Z-oobastik-s/Zwmenu/releases/tag/v${version}"
 }
 finally {

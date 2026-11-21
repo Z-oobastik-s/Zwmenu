@@ -183,11 +183,14 @@ public sealed class VoiceShiftWindow : Window
                 VerticalAlignment = WpfVAlign.Center
             };
             btn.ToolTip = VoiceColor.All[i].Title;
+            btn.Tag = i;
             _presetButtons.Add(btn);
             if (VoiceRvc.IsMark(VoiceColor.All[i].Model))
-                _own.Children.Add(btn);
-            else if (VoiceColor.All[i].Model.Length > 0)
+                continue;
+            if (VoiceColor.All[i].Model == "female_voice_hfg_new.onnx")
                 _girls.Children.Add(btn);
+            else if (VoiceColor.All[i].Model.Length > 0)
+                continue;
             else if (VoiceColor.All[i].Face.On)
                 _faces.Children.Add(btn);
             else
@@ -316,9 +319,13 @@ public sealed class VoiceShiftWindow : Window
         tools.Children.Add(add);
 
         var left = new StackPanel();
-        left.Children.Add(Section("Свои голоса"));
-        left.Children.Add(_own);
-        left.Children.Add(BarButton("Открыть папку голосов", VoiceRvc.OpenFolder));
+        if (_own.Children.Count > 0)
+        {
+            left.Children.Add(Section("Свои голоса"));
+            left.Children.Add(_own);
+            left.Children.Add(BarButton("Открыть папку голосов", VoiceRvc.OpenFolder));
+        }
+
         left.Children.Add(Section("Девушки"));
         left.Children.Add(_girls);
         left.Children.Add(Section("Образы"));
@@ -556,11 +563,11 @@ public sealed class VoiceShiftWindow : Window
     private void Paint()
     {
         int preset = VoiceShift.Shared.Preset;
-        for (int i = 0; i < _presetButtons.Count; i++)
+        foreach (var button in _presetButtons)
         {
-            bool on = i == preset;
-            _presetButtons[i].Background = on ? OnBrush : OffBrush;
-            _presetButtons[i].FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+            bool on = button.Tag is int index && index == preset;
+            button.Background = on ? OnBrush : OffBrush;
+            button.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
         }
 
         if (_arm < 0)

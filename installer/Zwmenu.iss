@@ -3,7 +3,7 @@
 ; Настройки остаются в %LOCALAPPDATA%\Zwmenu и при переустановке не затираются.
 
 #define MyAppName "Zwmenu"
-#define MyAppVersion "1.3.65"
+#define MyAppVersion "1.3.66"
 #define MyAppExeName "Zwmenu.exe"
 #define PublishDir "..\publish\win-x64"
 
@@ -29,7 +29,7 @@ CloseApplications=force
 RestartApplications=no
 VersionInfoProductName=Zwmenu
 VersionInfoDescription=Установщик Zwmenu
-VersionInfoVersion=1.3.65.0
+VersionInfoVersion=1.3.66.0
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -43,10 +43,8 @@ Source: "{#PublishDir}\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion 
 Source: "{#PublishDir}\tessdata\*"; DestDir: "{app}\tessdata"; Flags: ignoreversion
 Source: "{#PublishDir}\x64\*"; DestDir: "{app}\x64"; Flags: ignoreversion
 Source: "{#PublishDir}\ru\*"; DestDir: "{app}\ru"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#PublishDir}\libvlc\*"; DestDir: "{app}\libvlc"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\libvlc\win-x64\*"; DestDir: "{app}\libvlc\win-x64"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PublishDir}\Data\*"; DestDir: "{app}\Data"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "voices\*.onnx"; DestDir: "{localappdata}\Zwmenu\voices\rvc"; Flags: ignoreversion uninsneveruninstall
-Source: "voices\mean\*"; DestDir: "{localappdata}\Zwmenu\voices\mean"; Flags: ignoreversion uninsneveruninstall
 
 [Icons]
 Name: "{autoprograms}\Zwmenu"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
