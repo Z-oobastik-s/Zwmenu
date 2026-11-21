@@ -3,7 +3,7 @@
 ; Настройки остаются в %LOCALAPPDATA%\Zwmenu и при переустановке не затираются.
 
 #define MyAppName "Zwmenu"
-#define MyAppVersion "1.3.62"
+#define MyAppVersion "1.3.63"
 #define MyAppExeName "Zwmenu.exe"
 #define PublishDir "..\publish\win-x64"
 
@@ -29,7 +29,7 @@ CloseApplications=force
 RestartApplications=no
 VersionInfoProductName=Zwmenu
 VersionInfoDescription=Установщик Zwmenu
-VersionInfoVersion=1.3.62.0
+VersionInfoVersion=1.3.63.0
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -46,6 +46,7 @@ Source: "{#PublishDir}\ru\*"; DestDir: "{app}\ru"; Flags: ignoreversion recurses
 Source: "{#PublishDir}\libvlc\*"; DestDir: "{app}\libvlc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PublishDir}\Data\*"; DestDir: "{app}\Data"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "voices\*.onnx"; DestDir: "{localappdata}\Zwmenu\voices\rvc"; Flags: ignoreversion uninsneveruninstall
+Source: "voices\mean\*"; DestDir: "{localappdata}\Zwmenu\voices\mean"; Flags: ignoreversion uninsneveruninstall
 
 [Icons]
 Name: "{autoprograms}\Zwmenu"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"

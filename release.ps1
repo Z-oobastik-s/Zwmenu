@@ -50,7 +50,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-В телеграме выбранный голос меняет тон сразу. Тишина больше не подставляется.
+В телеграме выбранный голос считается нейросетью сразу. Это другой тембр.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta

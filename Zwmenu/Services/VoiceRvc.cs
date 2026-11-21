@@ -31,7 +31,7 @@ internal sealed class VoiceRvc
     readonly float[] _infer = new float[Window];
     readonly float[] _seam = new float[480];
     readonly float[] _out = new float[LiveRate * 4];
-    readonly VoiceCast _cast = new();
+    readonly VoiceMean _mean;
     readonly ManualResetEventSlim _wake = new(false);
 
     int _accN;
@@ -124,7 +124,7 @@ internal sealed class VoiceRvc
         lock (_io)
         {
             ClearAudio();
-            _cast.Reset(file);
+            _mean.Use(file);
         }
     }
 
@@ -138,7 +138,7 @@ internal sealed class VoiceRvc
         lock (_io)
         {
             ClearAudio();
-            _cast.Reset("");
+            _mean.Clear();
         }
     }
 
@@ -164,7 +164,7 @@ internal sealed class VoiceRvc
         if (!neural)
         {
             lock (_io)
-                return _cast.Apply(input, count, dst);
+                return _mean.Apply(input, count, dst);
         }
 
         lock (_io)
@@ -187,7 +187,7 @@ internal sealed class VoiceRvc
                 var tailIn = new float[count - got];
                 var tailOut = new float[count - got];
                 Array.Copy(input, got, tailIn, 0, tailIn.Length);
-                int extra = _cast.Apply(tailIn, tailIn.Length, tailOut);
+                int extra = _mean.Apply(tailIn, tailIn.Length, tailOut);
                 if (got + extra > dst.Length)
                     extra = dst.Length - got;
                 if (extra > 0)
@@ -254,6 +254,7 @@ internal sealed class VoiceRvc
         if (hz < 140f || hz > 180f)
             throw new InvalidOperationException("Высота своего голоса промахнулась");
         VoiceCast.SelfCheck();
+        VoiceMean.SelfCheck();
 
         var src = new float[480];
         for (int i = 0; i < src.Length; i++)
@@ -386,6 +387,11 @@ internal sealed class VoiceRvc
 
     int _behind = 1;
     int _probed = 1;
+
+    VoiceRvc()
+    {
+        _mean = new VoiceMean(SetStatus);
+    }
 
     float[] ConvertPiece(float[] src, int n, float semi)
     {
