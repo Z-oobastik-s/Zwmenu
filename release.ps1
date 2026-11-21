@@ -1,3 +1,4 @@
+param([switch]$FullOnly)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hdr = Join-Path $env:TEMP ("zwmenu-rel-" + [guid]::NewGuid().ToString("N") + ".txt")
@@ -112,7 +113,7 @@ try {
     if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal ustanovshik ($code)" }
   }
 
-  if (-not $hasPatch) {
+  if (-not $FullOnly -and -not $hasPatch) {
     Write-Output "Zagruzhayu zaplatku"
     $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Patch.zip"
     $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/zip" --data-binary "@$patch" $upload

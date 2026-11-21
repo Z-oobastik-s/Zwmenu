@@ -348,28 +348,40 @@ public static class AppUpdate
         if (!File.Exists(Path.Combine(stage, "Zwmenu.exe")) || !File.Exists(Path.Combine(stage, "Zwmenu.dll")))
             throw new InvalidDataException("zip");
         var bat = Path.Combine(Path.GetTempPath(), "zwmenu-patch-apply.bat");
+        string exe = BatPath(Path.Combine(install, "Zwmenu.exe"));
+        string fromDir = BatPath(stage);
         var text = new StringBuilder();
         text.AppendLine("@echo off");
         text.AppendLine("set N=0");
-        text.AppendLine(":again");
+        text.AppendLine(":wait");
         text.AppendLine("set /a N=N+1");
         text.AppendLine("ping 127.0.0.1 -n 2 >nul");
-        text.AppendLine("set BAD=0");
+        text.AppendLine("tasklist /FI \"IMAGENAME eq Zwmenu.exe\" | find /I \"Zwmenu.exe\" >nul");
+        text.AppendLine("if not errorlevel 1 if %N% lss 40 goto wait");
+        string toDir = BatPath(install);
         foreach (var name in PatchFiles)
         {
-            var from = Path.Combine(stage, name);
-            if (!File.Exists(from))
+            if (!File.Exists(Path.Combine(stage, name)))
                 continue;
-            text.Append("copy /Y \"").Append(from).Append("\" \"").Append(Path.Combine(install, name)).AppendLine("\" >nul");
-            text.AppendLine("if errorlevel 1 set BAD=1");
+            text.Append("copy /Y \"").Append(Path.Combine(fromDir, name)).Append("\" \"").Append(Path.Combine(toDir, name)).AppendLine("\" >nul");
+            if (name is "Zwmenu.exe" or "Zwmenu.dll")
+                text.AppendLine("if errorlevel 1 goto held");
         }
 
-        text.AppendLine("if %BAD%==0 goto copied");
-        text.AppendLine("if %N% lss 10 goto again");
-        text.AppendLine(":copied");
-        text.Append("start \"\" \"").Append(Path.Combine(install, "Zwmenu.exe")).AppendLine("\" --updated");
-        text.Append("rd /s /q \"").Append(stage).AppendLine("\"");
-        File.WriteAllText(bat, text.ToString(), Encoding.Unicode);
+        text.Append("start \"\" \"").Append(exe).AppendLine("\" --updated");
+        text.AppendLine("goto done");
+        text.AppendLine(":held");
+        text.AppendLine("if %N% lss 40 goto wait");
+        text.AppendLine(":done");
+        text.Append("rd /s /q \"").Append(fromDir).AppendLine("\"");
+        string script = text.ToString();
+        foreach (char c in script)
+        {
+            if (c > 127)
+                throw new InvalidOperationException("path");
+        }
+
+        File.WriteAllText(bat, script, Encoding.ASCII);
         Process.Start(new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
@@ -378,6 +390,26 @@ public static class AppUpdate
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         });
+    }
+
+    static string BatPath(string path)
+    {
+        foreach (char c in path)
+        {
+            if (c > 127)
+                return ShortPath(path);
+        }
+
+        return path;
+    }
+
+    static string ShortPath(string path)
+    {
+        var buffer = new StringBuilder(520);
+        int n = GetShortPathName(path, buffer, buffer.Capacity);
+        if (n <= 0 || n >= buffer.Capacity)
+            return path;
+        return buffer.ToString();
     }
 
     public static void RememberSkip(Version version)
@@ -598,6 +630,9 @@ public static class AppUpdate
         new(version.Major, version.Minor, Math.Max(version.Build, 0));
 
     static Version Newer(Version left, Version right) => left >= right ? left : right;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int GetShortPathName(string path, StringBuilder buffer, int size);
 
     static HttpClient CreateClient()
     {
