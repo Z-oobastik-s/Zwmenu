@@ -143,6 +143,7 @@ public sealed class TrayMenuWindow : Window
 
     void ShowVoice()
     {
+        FillVoice();
         _main.Visibility = Visibility.Collapsed;
         _voicePage.Visibility = Visibility.Visible;
         Width = 496;
@@ -321,6 +322,7 @@ public sealed class TrayMenuWindow : Window
 
     void FillVoice()
     {
+        _voicePage.Children.Clear();
         var head = new Grid { Margin = new Thickness(8, 4, 8, 2) };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -364,9 +366,27 @@ public sealed class TrayMenuWindow : Window
             VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
             CloseMenu();
         }));
-        AddVoiceGroup("Девушки", color => color.Model.Length > 0);
+        VoiceColor.Refresh();
+        AddVoiceGroup("Девушки", color => color.Model.Length > 0 && !VoiceRvc.IsMark(color.Model));
+        AddOwnVoices();
         AddVoiceGroup("Образы", color => color.Model.Length == 0 && color.Face.On);
         AddVoiceGroup("Эффекты", color => color.Model.Length == 0 && !color.Face.On);
+    }
+
+    void AddOwnVoices()
+    {
+        bool any = false;
+        foreach (VoiceColor color in VoiceColor.All)
+        {
+            if (VoiceRvc.IsMark(color.Model))
+                any = true;
+        }
+
+        if (any)
+            AddVoiceGroup("Свои голоса", color => VoiceRvc.IsMark(color.Model));
+        var folder = Row(any ? "Открыть папку голосов" : "Свои голоса. Открыть папку", VoiceRvc.OpenFolder);
+        folder.Padding = new Thickness(8, 4, 8, 4);
+        _voicePage.Children.Add(folder);
     }
 
     void AddVoiceGroup(string title, Func<VoiceColor, bool> take)
@@ -415,12 +435,13 @@ public sealed class TrayMenuWindow : Window
 
         if (!any)
             return;
+        if (title.Length > 0)
         _voicePage.Children.Add(new TextBlock
         {
             Text = title,
             Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
             FontSize = 11.5,
-            Margin = new Thickness(8, 8, 8, 2)
+            Margin = new Thickness(8, 4, 8, 1)
         });
         _voicePage.Children.Add(wrap);
     }

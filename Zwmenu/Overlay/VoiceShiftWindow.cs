@@ -43,6 +43,7 @@ public sealed class VoiceShiftWindow : Window
     private readonly TextBlock _meterWord;
     private readonly ScaleTransform _meterScale = new(0, 1);
     private readonly DispatcherTimer _meterTimer;
+    private readonly System.Windows.Controls.Primitives.UniformGrid _own = new() { Columns = 3, Margin = new Thickness(0, 2, 0, 0) };
     private readonly System.Windows.Controls.Primitives.UniformGrid _girls = new() { Columns = 3, Margin = new Thickness(0, 2, 0, 0) };
     private readonly System.Windows.Controls.Primitives.UniformGrid _faces = new() { Columns = 4, Margin = new Thickness(0, 2, 0, 0) };
     private readonly System.Windows.Controls.Primitives.UniformGrid _presets = new() { Columns = 4, Margin = new Thickness(0, 2, 0, 0) };
@@ -156,6 +157,7 @@ public sealed class VoiceShiftWindow : Window
         _semi.LostFocus += (_, _) => VoiceShift.Shared.SaveTone();
         _gain.LostFocus += (_, _) => VoiceShift.Shared.SaveTone();
 
+        VoiceColor.Refresh();
         for (int i = 0; i < VoiceColor.All.Count; i++)
         {
             int index = i;
@@ -182,7 +184,9 @@ public sealed class VoiceShiftWindow : Window
             };
             btn.ToolTip = VoiceColor.All[i].Title;
             _presetButtons.Add(btn);
-            if (VoiceColor.All[i].Model.Length > 0)
+            if (VoiceRvc.IsMark(VoiceColor.All[i].Model))
+                _own.Children.Add(btn);
+            else if (VoiceColor.All[i].Model.Length > 0)
                 _girls.Children.Add(btn);
             else if (VoiceColor.All[i].Face.On)
                 _faces.Children.Add(btn);
@@ -312,6 +316,9 @@ public sealed class VoiceShiftWindow : Window
         tools.Children.Add(add);
 
         var left = new StackPanel();
+        left.Children.Add(Section("Свои голоса"));
+        left.Children.Add(_own);
+        left.Children.Add(BarButton("Открыть папку голосов", VoiceRvc.OpenFolder));
         left.Children.Add(Section("Девушки"));
         left.Children.Add(_girls);
         left.Children.Add(Section("Образы"));
@@ -387,6 +394,7 @@ public sealed class VoiceShiftWindow : Window
         VoiceShiftLive.Shared.Changed += OnLive;
         VoiceBoard.Shared.Changed += OnBoard;
         VoiceGirl.Shared.Changed += OnGirl;
+        VoiceRvc.Shared.Changed += OnGirl;
         Closed += (_, _) =>
         {
             _meterTimer.Stop();
@@ -396,6 +404,7 @@ public sealed class VoiceShiftWindow : Window
             VoiceShiftLive.Shared.Changed -= OnLive;
             VoiceBoard.Shared.Changed -= OnBoard;
             VoiceGirl.Shared.Changed -= OnGirl;
+            VoiceRvc.Shared.Changed -= OnGirl;
         };
         FillBoard();
         Paint();
@@ -593,6 +602,8 @@ public sealed class VoiceShiftWindow : Window
     private static string GirlNote()
     {
         string girl = VoiceGirl.Shared.Status;
+        if (girl.Length == 0)
+            girl = VoiceRvc.Shared.Status;
         return girl.Length == 0 ? "" : " " + girl;
     }
 

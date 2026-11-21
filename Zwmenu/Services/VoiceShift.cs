@@ -66,7 +66,7 @@ public sealed class VoiceColor
     public FaceTone Face { get; }
     public string Model { get; }
 
-    public static IReadOnlyList<VoiceColor> All { get; } = new VoiceColor[]
+    static readonly VoiceColor[] Built =
     {
         new("Свой", 0f, VoiceFx.None),
         new("Мужской", -4f, VoiceFx.Male),
@@ -103,6 +103,18 @@ public sealed class VoiceColor
         new("Светлая", 0f, VoiceFx.None, default, "female_voice_old_hq.onnx"),
         new("Мягкая", 0f, VoiceFx.None, default, "female_voice_old.onnx")
     };
+
+    static VoiceColor[] _all = Built;
+
+    public static IReadOnlyList<VoiceColor> All => _all;
+
+    public static void Refresh()
+    {
+        var list = new List<VoiceColor>(Built);
+        foreach (string name in VoiceRvc.Names())
+            list.Add(new VoiceColor(VoiceRvc.TitleOf(name), 0f, VoiceFx.None, default, VoiceRvc.Mark + name));
+        _all = list.ToArray();
+    }
 }
 
 public sealed class VoiceShift
@@ -169,7 +181,21 @@ public sealed class VoiceShift
         _lowCut = Math.Clamp(s.VoiceShiftLowCut, 40f, 220f);
         _comp = Math.Clamp(s.VoiceShiftComp, 0f, 1.2f);
         _hear = Math.Clamp(s.VoiceShiftHearGain, 0f, 1f);
+        VoiceColor.Refresh();
         int id = s.VoiceShiftPreset;
+        string saved = s.VoiceShiftRvc ?? "";
+        if (saved.Length > 0)
+        {
+            for (int i = 0; i < VoiceColor.All.Count; i++)
+            {
+                if (VoiceColor.All[i].Model == VoiceRvc.Mark + saved)
+                {
+                    id = i;
+                    break;
+                }
+            }
+        }
+
         if (id < 0 || id >= VoiceColor.All.Count)
             id = 0;
         _preset = id;
@@ -262,7 +288,9 @@ public sealed class VoiceShift
                         input[i] *= _boost;
                 }
 
-                int gotGirl = VoiceGirl.Shared.Take(_model, input, count, _ready);
+                int gotGirl = VoiceRvc.IsMark(_model)
+                    ? VoiceRvc.Shared.Take(_model, _semi, input, count, _ready)
+                    : VoiceGirl.Shared.Take(_model, input, count, _ready);
                 float girlGain = _gain;
                 for (int i = 0; i < gotGirl; i++)
                 {
@@ -364,6 +392,7 @@ public sealed class VoiceShift
         }
 
         VoiceGirl.SelfCheck();
+        VoiceRvc.SelfCheck();
     }
 
     private void Apply(int index, float semi, bool save, bool keepSemi)
@@ -380,6 +409,8 @@ public sealed class VoiceShift
         var s = ScreenshotStore.Current;
         s.VoiceShiftPreset = index;
         s.VoiceShiftSemi = _semi;
+        string model = VoiceColor.All[index].Model;
+        s.VoiceShiftRvc = VoiceRvc.IsMark(model) ? model[VoiceRvc.Mark.Length..] : "";
         ScreenshotStore.Save(s);
     }
 
@@ -479,10 +510,21 @@ public sealed class VoiceShift
         _shine = face.Shine;
         _face = face.On;
         _model = VoiceColor.All[index].Model ?? "";
-        if (_model.Length > 0)
-            VoiceGirl.Shared.Select(_model);
-        else
+        if (VoiceRvc.IsMark(_model))
+        {
             VoiceGirl.Shared.Idle();
+            VoiceRvc.Shared.Select(_model);
+        }
+        else if (_model.Length > 0)
+        {
+            VoiceRvc.Shared.Idle();
+            VoiceGirl.Shared.Select(_model);
+        }
+        else
+        {
+            VoiceGirl.Shared.Idle();
+            VoiceRvc.Shared.Idle();
+        }
     }
 
     private void Ensure(int need)
@@ -1144,6 +1186,7 @@ public sealed class VoiceShiftLive
     public void StopForExit()
     {
         VoiceGirl.Shared.Stop();
+        VoiceRvc.Shared.Stop();
         if (_worker == null)
         {
             if (Running)

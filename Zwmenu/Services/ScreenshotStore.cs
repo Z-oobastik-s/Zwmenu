@@ -96,6 +96,9 @@ public sealed class ScreenshotSettings
     /// <summary>Тон изменителя голоса. 0 — свой.</summary>
     public int VoiceShiftPreset { get; set; }
 
+    /// <summary>Имя своего файла onnx, если выбран такой голос.</summary>
+    public string VoiceShiftRvc { get; set; } = "";
+
     /// <summary>Сдвиг тона в полутонах, от -15 до 15.</summary>
     public float VoiceShiftSemi { get; set; }
 
