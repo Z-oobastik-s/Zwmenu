@@ -85,10 +85,9 @@ try {
   $code = Gh "GET" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/tags/v$version" ""
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
-    $json = @{ tag_name = "v$version"; name = $version; body = @"
-Пять своих голосов убраны: они не переделывали речь. Меню голоса крутится колёсиком и не обрезается. Следующее обновление качает только программу, без всего установщика.
-"@; draft = $false; prerelease = $false } | ConvertTo-Json
-    [IO.File]::WriteAllText($meta, $json)
+    $note = [IO.File]::ReadAllText((Join-Path $root "installer\note.txt"), [Text.Encoding]::UTF8).Trim()
+    $json = @{ tag_name = "v$version"; name = $version; body = $note; draft = $false; prerelease = $false } | ConvertTo-Json
+    [IO.File]::WriteAllText($meta, $json, [Text.UTF8Encoding]::new($false))
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta
     if ($code -ne "201") { throw "GitHub ne sozdal reliz ($code)" }
   } elseif ($code -ne "200") {
