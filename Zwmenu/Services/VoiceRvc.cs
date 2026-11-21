@@ -31,6 +31,7 @@ internal sealed class VoiceRvc
     readonly float[] _infer = new float[Window];
     readonly float[] _seam = new float[480];
     readonly float[] _out = new float[LiveRate * 4];
+    readonly VoiceCast _cast = new();
     readonly ManualResetEventSlim _wake = new(false);
 
     int _accN;
@@ -121,9 +122,10 @@ internal sealed class VoiceRvc
         Interlocked.Increment(ref _gen);
         _file = file;
         lock (_io)
+        {
             ClearAudio();
-        EnsureThread();
-        _wake.Set();
+            _cast.Reset(file);
+        }
     }
 
     public void Idle()
@@ -134,7 +136,10 @@ internal sealed class VoiceRvc
         _file = "";
         SetStatus("");
         lock (_io)
+        {
             ClearAudio();
+            _cast.Reset("");
+        }
     }
 
     public void Stop()
@@ -149,11 +154,17 @@ internal sealed class VoiceRvc
         if (count <= 0)
             return 0;
         string file = IsMark(mark) ? mark[Mark.Length..] : "";
-        bool ready = file.Length > 0 && _loaded == file && _file == file && _net != null && _vec != null;
-        if (!ready)
+        if (file.Length == 0 || file != _file)
         {
             Array.Copy(input, dst, count);
             return count;
+        }
+
+        bool neural = Volatile.Read(ref _behind) == 0 && _loaded == file && _net != null && _vec != null;
+        if (!neural)
+        {
+            lock (_io)
+                return _cast.Apply(input, count, dst);
         }
 
         lock (_io)
@@ -170,12 +181,21 @@ internal sealed class VoiceRvc
                     QueueWindow(semi);
             }
 
-            int got = 0;
-            if (Volatile.Read(ref _behind) == 0)
-                got = Pull(dst, count);
+            int got = Pull(dst, count);
             if (got < count)
-                Array.Copy(input, got, dst, got, count - got);
-            return count;
+            {
+                var tailIn = new float[count - got];
+                var tailOut = new float[count - got];
+                Array.Copy(input, got, tailIn, 0, tailIn.Length);
+                int extra = _cast.Apply(tailIn, tailIn.Length, tailOut);
+                if (got + extra > dst.Length)
+                    extra = dst.Length - got;
+                if (extra > 0)
+                    Array.Copy(tailOut, 0, dst, got, extra);
+                got += extra;
+            }
+
+            return got;
         }
     }
 
@@ -233,6 +253,7 @@ internal sealed class VoiceRvc
         float hz = PitchAt(sine, sine.Length, PitchRate / 2);
         if (hz < 140f || hz > 180f)
             throw new InvalidOperationException("Высота своего голоса промахнулась");
+        VoiceCast.SelfCheck();
 
         var src = new float[480];
         for (int i = 0; i < src.Length; i++)
@@ -364,7 +385,7 @@ internal sealed class VoiceRvc
     }
 
     int _behind = 1;
-    int _probed;
+    int _probed = 1;
 
     float[] ConvertPiece(float[] src, int n, float semi)
     {
