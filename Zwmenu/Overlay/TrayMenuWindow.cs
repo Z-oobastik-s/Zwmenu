@@ -27,6 +27,8 @@ public sealed class TrayMenuWindow : Window
     readonly List<VoiceChip> _chips = new();
     TextBlock? _toggleLabel;
     TextBlock? _hearLabel;
+    TextBlock? _voiceStatus;
+    int _voiceIntent;
     int _ax;
     int _ay;
     long _shownAt;
@@ -108,6 +110,7 @@ public sealed class TrayMenuWindow : Window
             Child = pages
         };
         FillVoice();
+        VoiceShiftLive.Shared.Changed += OnVoiceLive;
     }
 
     public static void ShowAt(int x, int y, int clipPhase)
@@ -208,6 +211,7 @@ public sealed class TrayMenuWindow : Window
             _open = null;
         ShotPeek.ClosePeek();
         TrayDismiss.Disarm(this);
+        VoiceShiftLive.Shared.Changed -= OnVoiceLive;
         base.OnClosed(e);
     }
 
@@ -404,6 +408,14 @@ public sealed class TrayMenuWindow : Window
         }));
         var toggle = Row("", () =>
         {
+            if (VoiceShiftLive.Shared.Busy)
+            {
+                if (_voiceStatus != null)
+                    _voiceStatus.Text = "Подожди секунду.";
+                return;
+            }
+
+            _voiceIntent = VoiceShiftLive.Shared.Running ? 2 : 1;
             VoiceShiftLive.Shared.ToggleSaved();
             PaintVoice();
         });
@@ -411,11 +423,23 @@ public sealed class TrayMenuWindow : Window
         _voicePage.Children.Add(toggle);
         var hear = Row("", () =>
         {
-            VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
+            bool turnOn = !ScreenshotStore.Current.VoiceShiftHear;
+            bool starting = turnOn && !VoiceShiftLive.Shared.Running && !VoiceShiftLive.Shared.Busy;
+            VoiceShiftLive.Shared.SetHear(turnOn, startIfOff: true);
+            if (starting)
+                _voiceIntent = 1;
             PaintVoice();
         });
         _hearLabel = (TextBlock)hear.Child;
         _voicePage.Children.Add(hear);
+        _voiceStatus = new TextBlock
+        {
+            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
+            FontSize = 12,
+            Margin = new Thickness(8, 2, 8, 6),
+            TextWrapping = TextWrapping.Wrap
+        };
+        _voicePage.Children.Add(_voiceStatus);
         VoiceColor.Refresh();
         KeepMila();
         _chips.Clear();
@@ -443,12 +467,49 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
+    void OnVoiceLive()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            try { Dispatcher.BeginInvoke(OnVoiceLive); } catch { /* меню уже закрыто */ }
+            return;
+        }
+
+        if (_voiceScroll.Visibility != Visibility.Visible)
+            return;
+        if (!VoiceShiftLive.Shared.Busy)
+            _voiceIntent = 0;
+        PaintVoice();
+    }
+
     void PaintVoice()
     {
+        bool live = VoiceShiftLive.Shared.Running;
         if (_toggleLabel != null)
-            _toggleLabel.Text = VoiceShiftLive.Shared.Running ? "Выключить отдачу" : "Включить отдачу";
+        {
+            _toggleLabel.Text = _voiceIntent == 1
+                ? "Включаю отдачу"
+                : _voiceIntent == 2
+                    ? "Выключаю отдачу"
+                    : live ? "Выключить отдачу" : "Включить отдачу";
+            _toggleLabel.Foreground = TrayPaint.Brush(live || _voiceIntent != 0 ? TemplateTheme.AccentText : TemplateTheme.Fg);
+        }
+
         if (_hearLabel != null)
             _hearLabel.Text = ScreenshotStore.Current.VoiceShiftHear ? "Не слышать себя" : "Слышать себя";
+        if (_voiceStatus != null)
+        {
+            string note = _voiceIntent == 1
+                ? "Включаю. Сейчас скажу, вышло или нет."
+                : _voiceIntent == 2
+                    ? "Выключаю. Микрофон сейчас вернётся."
+                    : VoiceShiftLive.Shared.Note;
+            bool bad = note.StartsWith("Не ", StringComparison.Ordinal) || note == SetupOffer.CableNote;
+            _voiceStatus.Text = note;
+            _voiceStatus.Foreground = TrayPaint.Brush(bad
+                ? Color.FromRgb(0xE7, 0xB4, 0xB0)
+                : live ? TemplateTheme.AccentText : TemplateTheme.FgDim);
+        }
         int current = VoiceShift.Shared.Preset;
         foreach (var chip in _chips)
         {

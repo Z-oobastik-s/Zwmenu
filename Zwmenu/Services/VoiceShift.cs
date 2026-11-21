@@ -1107,7 +1107,9 @@ public sealed class VoiceShiftLive
 
     public void ToggleSaved()
     {
-        if (Running || Busy)
+        if (Busy)
+            return;
+        if (Running)
             RequestStop();
         else
             RequestStart(ScreenshotStore.Current.VoiceShiftHear);
