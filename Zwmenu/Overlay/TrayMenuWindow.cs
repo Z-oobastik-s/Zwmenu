@@ -16,7 +16,13 @@ public sealed class TrayMenuWindow : Window
 
     static TrayMenuWindow? _open;
     readonly StackPanel _main = new();
-    readonly StackPanel _voicePage = new() { Width = 468 };
+    readonly StackPanel _voicePage = new()
+    {
+        Width = 470,
+        Margin = new Thickness(0, 0, 0, 14),
+        HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+        Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13))
+    };
     readonly ScrollViewer _voiceScroll;
     readonly List<VoiceChip> _chips = new();
     TextBlock? _toggleLabel;
@@ -55,7 +61,6 @@ public sealed class TrayMenuWindow : Window
             if (e.Key == Key.Escape)
                 CloseMenu();
         };
-
         _main.Children.Add(Head(clipPhase));
         _main.Children.Add(Shots());
         _main.Children.Add(Rule());
@@ -81,6 +86,14 @@ public sealed class TrayMenuWindow : Window
         _voiceScroll = TrayPaint.HiddenScroll(_voicePage);
         _voiceScroll.Visibility = Visibility.Collapsed;
         _voiceScroll.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
+        _voiceScroll.Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13));
+        PreviewMouseWheel += (_, e) =>
+        {
+            if (_voiceScroll.Visibility != Visibility.Visible || _voiceScroll.ScrollableHeight <= 0)
+                return;
+            _voiceScroll.ScrollToVerticalOffset(_voiceScroll.VerticalOffset - e.Delta * 0.45);
+            e.Handled = true;
+        };
         var pages = new Grid();
         pages.Children.Add(_main);
         pages.Children.Add(_voiceScroll);
@@ -153,18 +166,38 @@ public sealed class TrayMenuWindow : Window
         FillVoice();
         _main.Visibility = Visibility.Collapsed;
         _voiceScroll.Visibility = Visibility.Visible;
-        Width = 496;
+        Width = 504;
+        SizeToContent = SizeToContent.Manual;
         double room = TrayPaint.Room(_ax, _ay);
         MaxHeight = room;
-        _voiceScroll.MaxHeight = Math.Max(240, room - 36);
+        _voicePage.Measure(new System.Windows.Size(470, double.PositiveInfinity));
+        double content = _voicePage.DesiredSize.Height;
+        const double chrome = 18;
+        double height = Math.Min(room, Math.Max(260, content + chrome));
+        Height = height;
+        double scrollH = Math.Max(180, height - chrome);
+        _voiceScroll.Height = scrollH;
+        _voiceScroll.MaxHeight = scrollH;
         Fit();
+        double missing = _voiceScroll.ExtentHeight - _voiceScroll.ViewportHeight;
+        if (missing > 0.5 && Height + missing <= room + 0.5)
+        {
+            Height += missing;
+            _voiceScroll.Height += missing;
+            _voiceScroll.MaxHeight = _voiceScroll.Height;
+            Fit();
+        }
     }
 
     void ShowList()
     {
         _voiceScroll.Visibility = Visibility.Collapsed;
+        _voiceScroll.Height = double.NaN;
+        _voiceScroll.MaxHeight = double.PositiveInfinity;
         _main.Visibility = Visibility.Visible;
         Width = 332;
+        Height = double.NaN;
+        SizeToContent = SizeToContent.Height;
         MaxHeight = TrayPaint.Room(_ax, _ay);
         Fit();
     }
@@ -430,7 +463,7 @@ public sealed class TrayMenuWindow : Window
 
     void AddVoiceGroup(string title, Func<VoiceColor, bool> take)
     {
-        var wrap = new WrapPanel { ItemWidth = 156, ItemHeight = 34, Margin = new Thickness(0, 0, 0, 2) };
+        var wrap = new WrapPanel { ItemWidth = 156, ItemHeight = 36, Margin = new Thickness(0, 0, 0, 4) };
         bool any = false;
         for (int i = 0; i < VoiceColor.All.Count; i++)
         {
