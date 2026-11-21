@@ -403,6 +403,7 @@ sealed class EdgeCapture : IDisposable
         }
 
         HideCursor();
+        Zwmenu.Overlay.EdgeCarryCue.Park();
         Zwmenu.Overlay.CursorKeep.Suspend();
         _cursorHeld = 1;
         ClipCursor(ref box);
@@ -437,6 +438,7 @@ sealed class EdgeCapture : IDisposable
         {
             ClipCursor(IntPtr.Zero);
             ShowCursorBack();
+            Zwmenu.Overlay.EdgeCarryCue.Unpark();
             return;
         }
 
@@ -448,6 +450,7 @@ sealed class EdgeCapture : IDisposable
         catch { /* таймер уже закрыт */ }
         ClipCursor(IntPtr.Zero);
         ShowCursorBack();
+        Zwmenu.Overlay.EdgeCarryCue.Unpark();
         if (_cursorHeld != 0)
         {
             _cursorHeld = 0;
@@ -722,7 +725,7 @@ sealed class EdgeCapture : IDisposable
             Post(EdgeWire.Move(step.Dx, step.Dy));
         if (!_captured || _hosting)
             return;
-        if (!ShouldRecenter(pt.X, pt.Y, _guardLeft, _guardTop, _guardRight, _guardBottom))
+        if (pt.X == _boxX && pt.Y == _boxY)
             return;
         PlaceExact(_boxX, _boxY);
         _originX = _boxX;
@@ -865,6 +868,7 @@ sealed class EdgeCapture : IDisposable
         catch { /* таймер уже закрыт */ }
         ClipCursor(IntPtr.Zero);
         ShowCursorBack();
+        Zwmenu.Overlay.EdgeCarryCue.Unpark();
         if (_cursorHeld != 0)
         {
             _cursorHeld = 0;

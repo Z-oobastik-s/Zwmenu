@@ -50,7 +50,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-Меню значка: голос открывается отдельным листом, все тембры видны. Подсказка трея не закрывает окно.
+Пока курсор на втором компьютере, на первом его больше не видно и он там не ездит.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta

@@ -26,6 +26,7 @@ static class EdgeCarryCue
     private static TextBlock? _label;
     private static DispatcherTimer? _timer;
     private static bool _cursorSwapped;
+    private static int _want;
     private static long _shownAt;
     private static readonly string MarkerPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Zwmenu", "cursor-carry");
 
@@ -70,7 +71,9 @@ static class EdgeCarryCue
         if (_window != null && !_window.IsVisible)
             _window.Show();
         Place();
-        QueueCursor(swap: true);
+        if (Volatile.Read(ref _want) != 2)
+            Volatile.Write(ref _want, 1);
+        QueueCursor();
         _timer?.Start();
     }
 
@@ -85,7 +88,24 @@ static class EdgeCarryCue
 
         _timer?.Stop();
         try { _window?.Hide(); } catch { /* уже закрыто */ }
-        QueueCursor(swap: false);
+        if (Volatile.Read(ref _want) == 1)
+            Volatile.Write(ref _want, 0);
+        QueueCursor();
+    }
+
+    /// <summary>Курсор уехал на другой компьютер: здесь стрелку не рисуем.</summary>
+    public static void Park()
+    {
+        Volatile.Write(ref _want, 2);
+        QueueCursor();
+    }
+
+    /// <summary>Курсор вернулся на этот компьютер.</summary>
+    public static void Unpark()
+    {
+        if (Volatile.Read(ref _want) == 2)
+            Volatile.Write(ref _want, 0);
+        QueueCursor();
     }
 
     private static void EnsureWindow()
@@ -172,18 +192,52 @@ static class EdgeCarryCue
     /// <summary>
     /// Смена системной стрелки на потоке мыши подвешивает курсор на сотни миллисекунд.
     /// </summary>
-    private static void QueueCursor(bool swap)
+    private static void QueueCursor()
     {
         int op = Interlocked.Increment(ref _cursorOp);
-        System.Threading.Tasks.Task.Run(() =>
+        System.Threading.Tasks.Task.Run(() => ApplyCursor(op));
+    }
+
+    private static void ApplyCursor(int op)
+    {
+        if (op != Volatile.Read(ref _cursorOp))
+            return;
+        int want = Volatile.Read(ref _want);
+        if (want == 2)
+            BlankCursor(op);
+        else if (want == 1)
+            SwapCursor(op);
+        else
+            RestoreCursor();
+    }
+
+    private static readonly uint[] ArrowIds = { 32512, 32513, 32649, 32651, 32515, 32646 };
+
+    private static void BlankCursor(int op)
+    {
+        if (op != Volatile.Read(ref _cursorOp))
+            return;
+        try
         {
-            if (op != Volatile.Read(ref _cursorOp))
-                return;
-            if (swap)
-                SwapCursor(op);
-            else
-                RestoreCursor();
-        });
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(MarkerPath)!);
+            System.IO.File.WriteAllText(MarkerPath, "1");
+            foreach (uint id in ArrowIds)
+            {
+                if (op != Volatile.Read(ref _cursorOp) || Volatile.Read(ref _want) != 2)
+                    return;
+                IntPtr cursor = EmptyCursor();
+                if (cursor == IntPtr.Zero)
+                    continue;
+                if (!SetSystemCursor(cursor, id))
+                    DestroyCursor(cursor);
+            }
+
+            _cursorSwapped = true;
+        }
+        catch
+        {
+            // стрелка останется, связь от этого не рвётся
+        }
     }
 
     private static void SwapCursor(int op)
@@ -232,6 +286,15 @@ static class EdgeCarryCue
         try { System.IO.File.Delete(MarkerPath); } catch { /* маркер не обязателен */ }
     }
 
+    private static IntPtr EmptyCursor()
+    {
+        const int size = 32;
+        using var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+            g.Clear(System.Drawing.Color.Transparent);
+        return CursorFrom(bmp, 0, 0);
+    }
+
     private static IntPtr BuildCursor()
     {
         const int size = 32;
@@ -259,6 +322,12 @@ static class EdgeCarryCue
             g.DrawLine(plus, 17, 23, 27, 23);
         }
 
+        return CursorFrom(bmp, 1, 1);
+    }
+
+    private static IntPtr CursorFrom(Bitmap bmp, int hotX, int hotY)
+    {
+        int size = bmp.Width;
         var header = new BitmapInfo
         {
             Size = 40,
@@ -294,8 +363,8 @@ static class EdgeCarryCue
         var info = new IconInfo
         {
             FIcon = false,
-            XHotspot = 1,
-            YHotspot = 1,
+            XHotspot = hotX,
+            YHotspot = hotY,
             HbmMask = mask,
             HbmColor = color
         };
