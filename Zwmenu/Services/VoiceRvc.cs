@@ -55,11 +55,36 @@ internal sealed class VoiceRvc
     public static bool IsMark(string model) =>
         model.StartsWith(Mark, StringComparison.Ordinal);
 
-    public static string TitleOf(string file)
+    public readonly struct VoiceLook
+    {
+        public VoiceLook(string title, float semi, float formant)
+        {
+            Title = title;
+            Semi = semi;
+            Formant = formant;
+        }
+
+        public string Title { get; }
+        public float Semi { get; }
+        public float Formant { get; }
+    }
+
+    /// <summary>Имена по слуху. Высота и горло разведены, иначе пять файлов звучат одним голосом.</summary>
+    public static VoiceLook LookOf(string file)
     {
         string stem = Path.GetFileNameWithoutExtension(file);
-        return stem.Replace('_', ' ');
+        return stem switch
+        {
+            "keruan" => new VoiceLook("Низкий", -6f, -2.4f),
+            "butian" => new VoiceLook("Мягкий", -2.5f, -0.8f),
+            "guaigui" => new VoiceLook("Ровный", 0f, 0f),
+            "yueyue" => new VoiceLook("Звонкий", 3.5f, 2.4f),
+            "kiki" => new VoiceLook("Тонкий", 7f, 4.4f),
+            _ => new VoiceLook(stem.Replace('_', ' '), 0f, 0f)
+        };
     }
+
+    public static string TitleOf(string file) => LookOf(file).Title;
 
     public static IReadOnlyList<string> Names()
     {
@@ -254,6 +279,13 @@ internal sealed class VoiceRvc
         if (hz < 140f || hz > 180f)
             throw new InvalidOperationException("Высота своего голоса промахнулась");
         VoiceCast.SelfCheck();
+        var low = LookOf("keruan.onnx");
+        var high = LookOf("kiki.onnx");
+        var plain = LookOf("guaigui.onnx");
+        if (low.Title == high.Title || low.Title == plain.Title)
+            throw new InvalidOperationException("Свои голоса названы одинаково");
+        if (high.Semi - low.Semi < 8f)
+            throw new InvalidOperationException("Свои голоса не разведены по высоте");
         VoiceMean.SelfCheck();
 
         var src = new float[480];

@@ -1,11 +1,12 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using SoundTouch;
 
 namespace Zwmenu.Services;
 
 /// <summary>
 /// Живой нейроголос. Считает кусками по 160 мс и успевает за речью на этом процессоре.
-/// В кабель идёт другой тембр, не фильтр тона.
+/// Тишина сеть не будит. Пять имён разведены по высоте и горлу.
 /// </summary>
 sealed class MeanEngine : IDisposable
 {
@@ -48,6 +49,8 @@ sealed class MeanEngine : IDisposable
             InterOpNumThreads = 1,
             IntraOpNumThreads = 2
         };
+        opt.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
+        opt.AddSessionConfigEntry("session.inter_op.allow_spinning", "0");
         _fbank = new InferenceSession(Path.Combine(dir, "fbank.onnx"), opt);
         _asr = new InferenceSession(Path.Combine(dir, "asr.int8.onnx"), opt);
         _gtm = new InferenceSession(Path.Combine(dir, "gtm.onnx"), opt);
@@ -430,11 +433,14 @@ internal sealed class VoiceMean
     int _outR;
     int _outN;
     int _run = 1;
+    int _talk;
     float _held;
     string _file = "";
     string _loaded = "";
+    string _colorFile = "";
     Thread? _worker;
     MeanEngine? _engine;
+    readonly MeanColor _color = new();
 
     public VoiceMean(Action<string> status) => _status = status;
 
@@ -450,6 +456,7 @@ internal sealed class VoiceMean
             _has = 0;
             _outW = _outR = _outN = 0;
             _held = 0;
+            _talk = 0;
         }
 
         Ensure();
@@ -471,10 +478,34 @@ internal sealed class VoiceMean
     {
         if (count <= 0)
             return 0;
+        float peak = 0;
+        for (int i = 0; i < count; i++)
+        {
+            float a = src[i] < 0f ? -src[i] : src[i];
+            if (a > peak)
+                peak = a;
+        }
+
         lock (_io)
         {
-            for (int i = 0; i < count; i++)
-                Down(src[i]);
+            const float talk = 0.018f;
+            if (peak >= talk)
+                _talk = RateIn / 2;
+            else if (_talk > 0)
+                _talk -= count;
+            bool rest = peak < talk && _talk <= 0;
+            if (rest)
+            {
+                _accN = 0;
+                _rn = 0;
+                _has = 0;
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                    Down(src[i]);
+            }
+
             int got = Math.Min(count, _outN);
             for (int i = 0; i < got; i++)
             {
@@ -486,10 +517,19 @@ internal sealed class VoiceMean
             }
 
             _outN -= got;
-            for (int i = got; i < count; i++)
+            if (rest && got == 0)
             {
-                _held *= 0.98f;
-                dst[i] = _held;
+                _held = 0;
+                for (int i = 0; i < count; i++)
+                    dst[i] = 0;
+            }
+            else
+            {
+                for (int i = got; i < count; i++)
+                {
+                    _held *= 0.98f;
+                    dst[i] = _held;
+                }
             }
             for (int i = 0; i < count; i++)
             {
@@ -521,13 +561,8 @@ internal sealed class VoiceMean
 
         _acc[_accN++] = (_r0 + _r1 + x) * (1f / 3f);
         _rn = 0;
-        if (_accN < Hop || _has != 0)
-        {
-            if (_accN >= Hop)
-                _accN = 0;
+        if (_accN < Hop)
             return;
-        }
-
         Array.Copy(_acc, _wait, Hop);
         _accN = 0;
         _has = 1;
@@ -542,7 +577,7 @@ internal sealed class VoiceMean
         {
             IsBackground = true,
             Name = "Zwmenu.Mean",
-            Priority = ThreadPriority.AboveNormal
+            Priority = ThreadPriority.Normal
         };
         _worker.Start();
     }
@@ -595,9 +630,17 @@ internal sealed class VoiceMean
                 continue;
             }
 
-            if (y.Length < 32)
+            if (y.Length < Hop / 2)
                 continue;
-            var up = Up(y);
+            if (!string.Equals(_colorFile, file, StringComparison.Ordinal))
+            {
+                var look = VoiceRvc.LookOf(file);
+                _color.Set(look.Semi, look.Formant);
+                _colorFile = file;
+            }
+
+            y = Fit(y, Hop);
+            var up = _color.Apply(Up(y));
             lock (_io)
             {
                 for (int i = 0; i < up.Length; i++)
@@ -677,6 +720,37 @@ internal sealed class VoiceMean
         return dst;
     }
 
+    static float[] Fit(float[] src, int n)
+    {
+        if (src.Length == n)
+            return src;
+        var dst = new float[n];
+        if (src.Length <= 1)
+        {
+            if (src.Length == 1)
+            {
+                for (int i = 0; i < n; i++)
+                    dst[i] = src[0];
+            }
+
+            return dst;
+        }
+
+        float step = (src.Length - 1f) / (n - 1f);
+        for (int i = 0; i < n; i++)
+        {
+            float pos = i * step;
+            int lo = (int)pos;
+            int hi = lo + 1;
+            if (hi >= src.Length)
+                hi = src.Length - 1;
+            float w = pos - lo;
+            dst[i] = src[lo] * (1f - w) + src[hi] * w;
+        }
+
+        return dst;
+    }
+
     public static string Folder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zwmenu", "voices", "mean");
 
@@ -710,5 +784,112 @@ internal sealed class VoiceMean
             throw new InvalidOperationException("Живой нейроголос не успевает");
         if (got < 8000 || peak < 0.02f)
             throw new InvalidOperationException("Живой нейроголос молчит");
+    }
+}
+
+/// <summary>Высота и горло поверх уже посчитанного голоса, чтобы имена различались на слух.</summary>
+sealed class MeanColor
+{
+    readonly SoundTouchProcessor _touch = new();
+    readonly VoiceFace _face = new();
+    readonly float[] _pull = new float[16384];
+    float _semi;
+    float _formant;
+    bool _open;
+
+    public void Set(float semi, float formant)
+    {
+        _semi = semi;
+        _formant = formant;
+        _face.Clear();
+        if (_open)
+        {
+            _touch.Clear();
+            _touch.PitchSemiTones = semi;
+        }
+    }
+
+    public float[] Apply(float[] src)
+    {
+        if (src.Length == 0)
+            return src;
+        if (Math.Abs(_semi) < 0.05f && Math.Abs(_formant) < 0.05f)
+            return src;
+        Open();
+        if (Math.Abs(_touch.PitchSemiTones - _semi) > 0.02f)
+            _touch.PitchSemiTones = _semi;
+        _touch.PutSamples(src, src.Length);
+        int got = 0;
+        while (got + 64 < _pull.Length)
+        {
+            int n = _touch.ReceiveSamples(new Span<float>(_pull, got, _pull.Length - got), _pull.Length - got);
+            if (n <= 0)
+                break;
+            got += n;
+        }
+
+        if (got < src.Length / 3)
+            return src;
+        var buf = new float[got];
+        Array.Copy(_pull, buf, got);
+        int use = got;
+        if (Math.Abs(_formant) > 0.05f)
+        {
+            var facedBuf = new float[got];
+            Array.Copy(buf, facedBuf, got);
+            int faced = _face.Process(facedBuf, got, _formant);
+            if (faced >= got / 2)
+            {
+                buf = facedBuf;
+                use = faced;
+            }
+        }
+
+        if (use != buf.Length)
+        {
+            var cut = new float[use];
+            Array.Copy(buf, cut, use);
+            buf = cut;
+        }
+
+        return FitTo(buf, src.Length);
+    }
+
+    void Open()
+    {
+        if (_open)
+            return;
+        _touch.SampleRate = 48000;
+        _touch.Channels = 1;
+        _touch.Tempo = 1f;
+        _touch.Rate = 1f;
+        _touch.PitchSemiTones = _semi;
+        _touch.SetSetting(SettingId.UseQuickSeek, 0);
+        _touch.SetSetting(SettingId.UseAntiAliasFilter, 1);
+        _touch.SetSetting(SettingId.AntiAliasFilterLength, 32);
+        _touch.SetSetting(SettingId.SequenceDurationMs, 24);
+        _touch.SetSetting(SettingId.SeekWindowDurationMs, 12);
+        _touch.SetSetting(SettingId.OverlapDurationMs, 8);
+        _open = true;
+    }
+
+    static float[] FitTo(float[] src, int n)
+    {
+        if (src.Length == n)
+            return src;
+        var dst = new float[n];
+        if (src.Length <= 1)
+            return dst;
+        float step = (src.Length - 1f) / (n - 1f);
+        for (int i = 0; i < n; i++)
+        {
+            float pos = i * step;
+            int lo = (int)pos;
+            int hi = Math.Min(lo + 1, src.Length - 1);
+            float w = pos - lo;
+            dst[i] = src[lo] * (1f - w) + src[hi] * w;
+        }
+
+        return dst;
     }
 }
