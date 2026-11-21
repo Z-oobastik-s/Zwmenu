@@ -31,8 +31,14 @@ internal sealed class VoiceGirl
     private readonly float[] _out = new float[ModelRate * 4];
     private readonly ManualResetEventSlim _wake = new(false);
 
+    private const int Join = 96;
+
+    private readonly float[] _join = new float[Join];
     private float _r0;
     private float _r1;
+    private float _held;
+    private float _smooth;
+    private int _joinN;
     private int _rn;
     private int _accN;
     private int _qW;
@@ -63,6 +69,8 @@ internal sealed class VoiceGirl
             return;
         }
 
+        if (file is "female_voice_old_hq.onnx" or "female_voice_old.onnx")
+            file = "female_voice_hfg_new.onnx";
         if (!Known(file) || _file == file)
             return;
         Interlocked.Increment(ref _gen);
@@ -106,7 +114,16 @@ internal sealed class VoiceGirl
         {
             for (int i = 0; i < count; i++)
                 Push16(input[i]);
-            return Pull(dst, count);
+            int got = Pull(dst, count);
+            if (got > 0)
+                _held = dst[got - 1];
+            for (int i = got; i < count; i++)
+            {
+                _held *= 0.985f;
+                dst[i] = _held;
+            }
+
+            return count;
         }
     }
 
@@ -183,8 +200,6 @@ internal sealed class VoiceGirl
             _qN++;
             _wake.Set();
         }
-        else
-            Emit(_acc, Chunk, 1f);
 
         Array.Copy(_acc, _hist, Chunk);
         _accN = 0;
@@ -252,8 +267,12 @@ internal sealed class VoiceGirl
         _outR = 0;
         _outN = 0;
         _upPrev = 0;
+        _held = 0;
+        _smooth = 0;
+        _joinN = 0;
         Array.Clear(_hist);
         Array.Clear(_acc);
+        Array.Clear(_join);
     }
 
     private void EnsureThread()
@@ -269,7 +288,7 @@ internal sealed class VoiceGirl
             {
                 IsBackground = true,
                 Name = "Zwmenu.Girl",
-                Priority = ThreadPriority.BelowNormal
+                Priority = ThreadPriority.Normal
             };
             _worker.Start();
         }
@@ -352,12 +371,36 @@ internal sealed class VoiceGirl
         }
 
         float rms = MathF.Sqrt(energy / take);
-        float gain = rms < 0.012f ? 1f : Math.Clamp(0.12f / rms, 0.7f, 4f);
+        float gain = rms < 0.008f ? 1f : Math.Clamp(0.09f / rms, 0.65f, 1.8f);
+        float prev = _smooth;
+        for (int i = 0; i < take; i++)
+        {
+            float s = _tail[i] * gain;
+            float jump = s - prev;
+            if (jump > 0.34f)
+                s = prev + 0.34f;
+            else if (jump < -0.34f)
+                s = prev - 0.34f;
+            _tail[i] = s;
+            prev = s;
+        }
+
+        _smooth = prev;
+        int fade = Math.Min(Join, Math.Min(take, _joinN));
+        for (int i = 0; i < fade; i++)
+        {
+            float w = (i + 1) / (float)(fade + 1);
+            _tail[i] = _join[i] * (1f - w) + _tail[i] * w;
+        }
+
+        int keep = Math.Min(Join, take);
+        Array.Copy(_tail, take - keep, _join, 0, keep);
+        _joinN = keep;
         lock (_io)
         {
             if (gen != Volatile.Read(ref _gen))
                 return;
-            Emit(_tail, take, gain);
+            Emit(_tail, take, 1f);
         }
     }
 
@@ -382,8 +425,10 @@ internal sealed class VoiceGirl
         {
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             InterOpNumThreads = 1,
-            IntraOpNumThreads = 2
+            IntraOpNumThreads = 1
         };
+        opts.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
+        opts.AddSessionConfigEntry("session.inter_op.allow_spinning", "0");
         var next = new InferenceSession(path, opts);
         if (gen != Volatile.Read(ref _gen))
         {

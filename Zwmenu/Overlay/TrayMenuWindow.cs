@@ -353,21 +353,22 @@ public sealed class TrayMenuWindow : Window
         Grid.SetColumn(back, 1);
         head.Children.Add(back);
         _voicePage.Children.Add(head);
-        _voicePage.Children.Add(Row("Открыть настройки", () => { CloseMenu(); VoiceShiftWindow.ShowCurrent(); }));
+        _voicePage.Children.Add(Row("Открыть настройки", () => VoiceShiftWindow.ShowCurrent()));
         string toggle = VoiceShiftLive.Shared.Running ? "Выключить отдачу" : "Включить отдачу";
         _voicePage.Children.Add(Row(toggle, () =>
         {
             VoiceShiftLive.Shared.ToggleSaved();
-            CloseMenu();
+            Dispatcher.BeginInvoke(FillVoice);
         }));
         bool hear = ScreenshotStore.Current.VoiceShiftHear;
         _voicePage.Children.Add(Row(hear ? "Не слышать себя" : "Слышать себя", () =>
         {
             VoiceShiftLive.Shared.SetHear(!ScreenshotStore.Current.VoiceShiftHear, startIfOff: true);
-            CloseMenu();
+            Dispatcher.BeginInvoke(FillVoice);
         }));
         VoiceColor.Refresh();
-        AddVoiceGroup("Девушки", color => color.Model.Length > 0 && !VoiceRvc.IsMark(color.Model));
+        KeepMila();
+        AddVoiceGroup("Девушки", color => color.Model == "female_voice_hfg_new.onnx");
         AddOwnVoices();
         AddVoiceGroup("Образы", color => color.Model.Length == 0 && color.Face.On);
         AddVoiceGroup("Эффекты", color => color.Model.Length == 0 && !color.Face.On);
@@ -387,6 +388,24 @@ public sealed class TrayMenuWindow : Window
         var folder = Row(any ? "Открыть папку голосов" : "Свои голоса. Открыть папку", VoiceRvc.OpenFolder);
         folder.Padding = new Thickness(8, 4, 8, 4);
         _voicePage.Children.Add(folder);
+    }
+
+    static void KeepMila()
+    {
+        int preset = VoiceShift.Shared.Preset;
+        if (preset < 0 || preset >= VoiceColor.All.Count)
+            return;
+        string model = VoiceColor.All[preset].Model ?? "";
+        if (model is not ("female_voice_old_hq.onnx" or "female_voice_old.onnx"))
+            return;
+        for (int i = 0; i < VoiceColor.All.Count; i++)
+        {
+            if (VoiceColor.All[i].Model == "female_voice_hfg_new.onnx")
+            {
+                VoiceShift.Shared.ApplyPreset(i);
+                return;
+            }
+        }
     }
 
     void AddVoiceGroup(string title, Func<VoiceColor, bool> take)
@@ -425,10 +444,11 @@ public sealed class TrayMenuWindow : Window
             };
             chip.MouseEnter += (_, _) => chip.Background = hot;
             chip.MouseLeave += (_, _) => chip.Background = idle;
-            chip.MouseLeftButtonUp += (_, _) =>
+            chip.MouseLeftButtonUp += (_, e) =>
             {
+                e.Handled = true;
                 VoiceShift.Shared.ApplyPreset(index);
-                CloseMenu();
+                Dispatcher.BeginInvoke(FillVoice);
             };
             wrap.Children.Add(chip);
         }
