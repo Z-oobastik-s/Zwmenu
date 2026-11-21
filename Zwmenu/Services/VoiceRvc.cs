@@ -170,8 +170,59 @@ internal sealed class VoiceRvc
                     QueueWindow(semi);
             }
 
-            return Pull(dst, count);
+            int got = 0;
+            if (Volatile.Read(ref _behind) == 0)
+                got = Pull(dst, count);
+            if (got < count)
+                Array.Copy(input, got, dst, got, count - got);
+            return count;
         }
+    }
+
+    public bool NeedsBake => _file.Length > 0 && Volatile.Read(ref _behind) != 0;
+
+    /// <summary>Целиком пересчитывает запись. Для живого микрофона эта модель на слабом процессоре не успевает.</summary>
+    public float[] Bake(float[] src, int count, float semi)
+    {
+        if (src == null || count <= 0)
+            return Array.Empty<float>();
+        SetStatus("Считаю голос.");
+        string file = _file;
+        if (file.Length == 0 || !EnsureLoaded(file, Volatile.Read(ref _gen)))
+            return src.AsSpan(0, count).ToArray();
+        var dst = new float[count];
+        const int step = 48000;
+        const int fade = 480;
+        var prev = new float[fade];
+        int prevN = 0;
+        for (int at = 0; at < count; )
+        {
+            int n = Math.Min(step, count - at);
+            var piece = new float[n];
+            Array.Copy(src, at, piece, 0, n);
+            float[] cooked = ConvertPiece(piece, n, semi);
+            if (cooked.Length != n)
+            {
+                var fitted = new float[n];
+                Stretch(cooked, 0, Math.Max(1, cooked.Length), fitted, n);
+                cooked = fitted;
+            }
+
+            int blend = Math.Min(prevN, Math.Min(fade, n));
+            for (int i = 0; i < blend; i++)
+            {
+                float t = blend == 1 ? 1f : i / (float)(blend - 1);
+                cooked[i] = prev[i] * (1f - t) + cooked[i] * t;
+            }
+
+            Array.Copy(cooked, 0, dst, at, n);
+            prevN = Math.Min(fade, n);
+            Array.Copy(cooked, n - prevN, prev, 0, prevN);
+            at += n;
+        }
+
+        SetStatus("");
+        return dst;
     }
 
     public static void SelfCheck()
@@ -227,9 +278,7 @@ internal sealed class VoiceRvc
         }
 
         _outN -= give;
-        if (give < count)
-            Array.Clear(dst, give, count - give);
-        return count;
+        return give;
     }
 
     void ClearAudio()
@@ -258,7 +307,7 @@ internal sealed class VoiceRvc
             {
                 IsBackground = true,
                 Name = "Zwmenu.Rvc",
-                Priority = ThreadPriority.BelowNormal
+                Priority = ThreadPriority.Normal
             };
             _worker.Start();
         }
@@ -269,6 +318,7 @@ internal sealed class VoiceRvc
         while (Volatile.Read(ref _run) == 1)
         {
             _wake.Wait(400);
+            _wake.Reset();
             if (Volatile.Read(ref _run) == 0)
                 break;
             string file = _file;
@@ -299,9 +349,12 @@ internal sealed class VoiceRvc
 
             if (gen != Volatile.Read(ref _gen))
                 continue;
+            if (Volatile.Read(ref _behind) != 0 && Volatile.Read(ref _probed) != 0)
+                continue;
             try
             {
                 Infer(gen, semi);
+                Volatile.Write(ref _probed, 1);
             }
             catch
             {
@@ -310,31 +363,47 @@ internal sealed class VoiceRvc
         }
     }
 
-    void Infer(int gen, float semi)
+    int _behind = 1;
+    int _probed;
+
+    float[] ConvertPiece(float[] src, int n, float semi)
     {
         var vec = _vec;
         var net = _net;
-        if (vec == null || net == null || _bind == null)
-            return;
-        var wav40 = new float[Window * ModelRate / LiveRate + 8];
-        int n40 = Resample(_infer, Window, LiveRate, ModelRate, wav40);
+        var bind = _bind;
+        if (vec == null || net == null || bind == null || n <= 0)
+            return src.AsSpan(0, Math.Max(0, n)).ToArray();
+        var wav40 = new float[n * ModelRate / LiveRate + 8];
+        int n40 = Resample(src, n, LiveRate, ModelRate, wav40);
         var wav16 = new float[n40 * VecRate / ModelRate + 8];
         int n16 = Resample(wav40, n40, ModelRate, VecRate, wav16);
         float[] phone = Features(vec, wav16, n16);
         if (phone.Length < 768)
-            return;
+            return src.AsSpan(0, n).ToArray();
         int featW = phone.Length % 768 == 0 ? 768 : 256;
         int frames = phone.Length / featW;
         var pitch = new long[frames];
         var pitchf = new float[frames];
         FillPitch(wav40, n40, frames, semi, pitch, pitchf);
-        float[] audio = Speak(_bind, net, phone, frames, pitch, pitchf);
-        if (audio.Length < 8 || gen != Volatile.Read(ref _gen))
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        float[] audio = Speak(bind, net, phone, frames, pitch, pitchf);
+        int slow = clock.ElapsedMilliseconds * (long)LiveRate > (long)n * 1000L ? 1 : 0;
+        Volatile.Write(ref _behind, slow);
+        if (audio.Length < 8)
+            return src.AsSpan(0, n).ToArray();
+        var fitted = new float[n];
+        Stretch(audio, 0, audio.Length, fitted, n);
+        return fitted;
+    }
+
+    void Infer(int gen, float semi)
+    {
+        float[] fresh = ConvertPiece(_infer, Window, semi);
+        if (gen != Volatile.Read(ref _gen) || fresh.Length < Fresh)
             return;
-        int half = Math.Max(1, audio.Length / 2);
-        int start = audio.Length - half;
-        var fresh = new float[Fresh];
-        Stretch(audio, start, half, fresh, Fresh);
+        var tail = new float[Fresh];
+        Array.Copy(fresh, fresh.Length - Fresh, tail, 0, Fresh);
+        fresh = tail;
         Blend(fresh);
         lock (_io)
         {
@@ -496,7 +565,6 @@ internal sealed class VoiceRvc
     static float[] Features(InferenceSession vec, float[] wav, int n)
     {
         string audioName = "";
-        string maskName = "";
         int rank = 2;
         foreach (var pair in vec.InputMetadata)
         {
@@ -505,8 +573,6 @@ internal sealed class VoiceRvc
                 audioName = pair.Key;
                 rank = pair.Value.Dimensions.Length >= 3 ? 3 : 2;
             }
-            else if (pair.Value.ElementType == typeof(long))
-                maskName = pair.Key;
         }
 
         if (audioName.Length == 0)
@@ -516,21 +582,47 @@ internal sealed class VoiceRvc
         var audio = rank == 3
             ? new DenseTensor<float>(samples, new[] { 1, 1, n })
             : new DenseTensor<float>(samples, new[] { 1, n });
-        var feeds = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor(audioName, audio) };
-        if (maskName.Length > 0)
+        using var results = vec.Run(new[] { NamedOnnxValue.CreateFromTensor(audioName, audio) });
+        var ten = results[0].AsTensor<float>();
+        float[] data = ten.ToArray();
+        var dims = ten.Dimensions;
+        const int feat = 768;
+        int time;
+        float[] rows;
+        if (dims.Length == 3 && dims[2] == feat)
         {
-            var mask = new DenseTensor<long>(new[] { 1, n });
-            for (int i = 0; i < n; i++)
-                mask[0, i] = 1;
-            feeds.Add(NamedOnnxValue.CreateFromTensor(maskName, mask));
+            time = dims[1];
+            rows = data;
+        }
+        else if (dims.Length == 3 && dims[1] == feat)
+        {
+            time = dims[2];
+            rows = Transpose(data, feat, time);
+        }
+        else
+            return Array.Empty<float>();
+
+        int frames = time * 2;
+        var doubled = new float[frames * feat];
+        for (int t = 0; t < time; t++)
+        {
+            Array.Copy(rows, t * feat, doubled, (t * 2) * feat, feat);
+            Array.Copy(rows, t * feat, doubled, (t * 2 + 1) * feat, feat);
         }
 
-        using var results = vec.Run(feeds);
-        float[] data = results[0].AsEnumerable<float>().ToArray();
-        var dims = results[0].AsTensor<float>().Dimensions;
-        if (dims.Length == 3 && dims[1] == 768 && dims[2] != 768)
-            data = Transpose(data, dims[1], dims[2]);
-        return data;
+        return doubled;
+    }
+
+    static Float16[] HalfChannels(Float16[] ntc, int time, int channels)
+    {
+        var nct = new Float16[time * channels];
+        for (int t = 0; t < time; t++)
+        {
+            for (int c = 0; c < channels; c++)
+                nct[c * time + t] = ntc[t * channels + c];
+        }
+
+        return nct;
     }
 
     static float[] ToChannels(float[] ntc, int time, int channels)
@@ -630,7 +722,20 @@ internal sealed class VoiceRvc
     {
         var feeds = new List<NamedOnnxValue>();
         int feat = phone.Length / frames;
-        if (bind.PhoneNct)
+        if (bind.PhoneHalf)
+        {
+            var half = new Float16[phone.Length];
+            for (int i = 0; i < phone.Length; i++)
+                half[i] = (Float16)phone[i];
+            if (bind.PhoneNct)
+            {
+                var laid = HalfChannels(half, frames, feat);
+                feeds.Add(NamedOnnxValue.CreateFromTensor(bind.Phone, new DenseTensor<Float16>(laid, new[] { 1, feat, frames })));
+            }
+            else
+                feeds.Add(NamedOnnxValue.CreateFromTensor(bind.Phone, new DenseTensor<Float16>(half, new[] { 1, frames, feat })));
+        }
+        else if (bind.PhoneNct)
         {
             var laid = ToChannels(phone, frames, feat);
             feeds.Add(NamedOnnxValue.CreateFromTensor(bind.Phone, new DenseTensor<float>(laid, new[] { 1, feat, frames })));
@@ -668,7 +773,17 @@ internal sealed class VoiceRvc
         }
 
         using var results = net.Run(feeds);
-        float[] data = results[0].AsEnumerable<float>().ToArray();
+        float[] data;
+        if (net.OutputMetadata.Values.First().ElementType == typeof(Float16))
+        {
+            var halfOut = results[0].AsTensor<Float16>();
+            data = new float[halfOut.Length];
+            int k = 0;
+            foreach (var h in halfOut)
+                data[k++] = (float)h;
+        }
+        else
+            data = results[0].AsEnumerable<float>().ToArray();
         float peak = 0;
         for (int i = 0; i < data.Length; i++)
         {
@@ -728,6 +843,7 @@ internal sealed class VoiceRvc
     {
         public string Phone = "";
         public bool PhoneNct;
+        public bool PhoneHalf;
         public string Pitch = "";
         public bool PitchLong = true;
         public string PitchF = "";
@@ -772,6 +888,7 @@ internal sealed class VoiceRvc
                 {
                     bind.Phone = key;
                     bind.PhoneNct = dims.Length >= 2 && (dims[1] == 768 || dims[1] == 256);
+                    bind.PhoneHalf = meta.ElementType == typeof(Float16);
                 }
                 else if (low.Contains("sid") || low.Contains("spk") || low == "ds")
                     bind.Sid = key;

@@ -397,6 +397,12 @@ public sealed class VoiceRecService : IDisposable
         {
             try
             {
+                if (VoiceRvc.Shared.NeedsBake)
+                {
+                    try { snapshot = VoiceRvc.Shared.Bake(snapshot, snapshot.Length, VoiceShift.Shared.Semi); }
+                    catch { /* запись остаётся как сказали */ }
+                }
+
                 float[] final = VoiceRecDsp.Finalize(snapshot, SampleRate, fx);
                 if (final.Length < SampleRate / 10)
                     final = snapshot;

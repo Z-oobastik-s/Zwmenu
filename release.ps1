@@ -50,7 +50,7 @@ try {
   if ($code -eq "404") {
     $meta = Join-Path $env:TEMP "zwmenu-rel-body.json"
     $json = @{ tag_name = "v$version"; name = $version; body = @"
-В обновлении сразу пять своих голосов: butian, guaigui, keruan, kiki, yueyue.
+Голос из файла больше не подменяется тишиной. Запись пересчитывается после стопа.
 "@; draft = $false; prerelease = $false } | ConvertTo-Json
     [IO.File]::WriteAllText($meta, $json)
     $code = Gh "POST" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases" $meta
