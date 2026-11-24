@@ -85,11 +85,13 @@ sealed class EdgeCapture : IDisposable
     private bool _holdUntilLeftUp;
     private bool _leftHeld;
     private bool _disposed;
+    private int _timerBoost;
 
     public EdgeCapture()
     {
         _mouseProc = OnMouse;
         _keyProc = OnKey;
+        // 4 мс: с timeBeginPeriod(1) реально чаще, без него Windows часто даёт ~15 мс и курсор плывёт.
         _moveFlush = new System.Threading.Timer(FlushMove, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
     }
 
@@ -134,6 +136,8 @@ sealed class EdgeCapture : IDisposable
             {
                 _track = false;
                 _grabbedUntil = 0;
+                if (!_captured)
+                    EaseTimer();
                 if (was)
                 {
                     try { EdgeChime.Leave(); }
@@ -142,6 +146,8 @@ sealed class EdgeCapture : IDisposable
                     catch { /* подсказка переноса не обязательна */ }
                 }
             }
+            else
+                BoostTimer();
         }
     }
 
@@ -177,6 +183,7 @@ sealed class EdgeCapture : IDisposable
         _attached = false;
         _hosting = false;
         _pinned = false;
+        EaseTimer();
     }
 
     /// <summary>Второй ноутбук вернул курсор. Ставим его у своего края и снова даём мышь системе.</summary>
@@ -226,38 +233,27 @@ sealed class EdgeCapture : IDisposable
         if (!_hosting || (dx == 0 && dy == 0))
             return;
 
-        // Игра прячет курсор и читает сдвиг, а не точку на экране.
-        // SetCursorPos туда не доходит, поэтому камера стояла.
+        // Всегда относительный ввод: SetCursorPos на каждый пакет давал дёрганье и лишнюю задержку.
+        // Игра и стол читают сдвиг одинаково; скорость Windows учитываем в Unscale.
         long now = Environment.TickCount64;
         bool hidden = CursorHidden();
         if (hidden)
             _grabbedUntil = now + 200;
         if (hidden || now < _grabbedUntil)
-        {
             _track = false;
-            SendRelative(dx, dy);
-            return;
-        }
 
-        if (!_track && GetCursorPos(out var current))
+        SendRelative(dx, dy);
+        if (_track && GetCursorPos(out var pt))
         {
-            _trackX = current.X;
-            _trackY = current.Y;
+            _trackX = pt.X;
+            _trackY = pt.Y;
+        }
+        else if (!_track && !hidden && GetCursorPos(out var cur))
+        {
+            _trackX = cur.X;
+            _trackY = cur.Y;
             _track = true;
         }
-
-        if (!_track)
-        {
-            SendRelative(dx, dy);
-            return;
-        }
-
-        var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-        int x = Math.Clamp(_trackX + dx, bounds.Left, Math.Max(bounds.Left, bounds.Right - 1));
-        int y = Math.Clamp(_trackY + dy, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - 1));
-        _trackX = x;
-        _trackY = y;
-        PlaceExact(x, y);
     }
 
     public void ApplyButton(byte id, bool down)
@@ -353,6 +349,7 @@ sealed class EdgeCapture : IDisposable
             y = bounds.Top + (int)((bounds.Height - 1L) * Math.Clamp(yRatio, 0, 10000) / 10000);
         int x = _peerOnRight ? bounds.Right - 9 : bounds.Left + 8;
         _hosting = true;
+        BoostTimer();
         _blockUntil = Environment.TickCount64 + 350;
         EdgeChime.Arrive();
         if (!CursorHidden())
@@ -414,7 +411,8 @@ sealed class EdgeCapture : IDisposable
         Zwmenu.Overlay.CursorKeep.Suspend();
         _cursorHeld = 1;
         ClipCursor(ref box);
-        _moveFlush.Change(0, 8);
+        BoostTimer();
+        _moveFlush.Change(0, 4);
         Post(EdgeWire.Enter(_yRatio(x, y)));
         EdgeChime.Leave();
         if (left)
@@ -455,6 +453,8 @@ sealed class EdgeCapture : IDisposable
             _moveFlush.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
         }
         catch { /* таймер уже закрыт */ }
+        if (!_hosting)
+            EaseTimer();
         ClipCursor(IntPtr.Zero);
         ShowCursorBack();
         Zwmenu.Overlay.EdgeCarryCue.Unpark();
@@ -763,7 +763,23 @@ sealed class EdgeCapture : IDisposable
 
     /// <summary>Чужой курсор стоит в track. Сдвиг дальше этого — уже местный палец или мышь.</summary>
     internal static bool IsLocalPointer(int x, int y, int trackX, int trackY)
-        => Math.Abs(x - trackX) > 6 || Math.Abs(y - trackY) > 6;
+        => Math.Abs(x - trackX) > 14 || Math.Abs(y - trackY) > 14;
+
+    void BoostTimer()
+    {
+        if (Interlocked.Exchange(ref _timerBoost, 1) != 0)
+            return;
+        try { timeBeginPeriod(1); }
+        catch { /* multimedia timer недоступен */ }
+    }
+
+    void EaseTimer()
+    {
+        if (Interlocked.Exchange(ref _timerBoost, 0) == 0)
+            return;
+        try { timeEndPeriod(1); }
+        catch { /* multimedia timer недоступен */ }
+    }
 
     /// <summary>Курсор почти у края экрана. Один раз уводим в центр, чтобы шаг не оборвался.</summary>
     internal static bool ShouldRecenter(int x, int y, int left, int top, int right, int bottom)
@@ -805,7 +821,7 @@ sealed class EdgeCapture : IDisposable
         int missed = OneStep(683, 0, 710, 0).Dx + OneStep(origin, 0, 720, 0).Dx;
         if (missed != 37)
             throw new InvalidOperationException("неудачный возврат отправлен повторно");
-        if (IsLocalPointer(100, 100, 100, 100) || IsLocalPointer(104, 100, 100, 100))
+        if (IsLocalPointer(100, 100, 100, 100) || IsLocalPointer(110, 100, 100, 100))
             throw new InvalidOperationException("своя точка принята за тачпад");
         if (!IsLocalPointer(120, 100, 100, 100))
             throw new InvalidOperationException("тачпад не отличили от чужого курсора");
@@ -880,6 +896,7 @@ sealed class EdgeCapture : IDisposable
             _moveFlush.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
         }
         catch { /* таймер уже закрыт */ }
+        EaseTimer();
         ClipCursor(IntPtr.Zero);
         ShowCursorBack();
         Zwmenu.Overlay.EdgeCarryCue.Unpark();
@@ -1060,6 +1077,12 @@ sealed class EdgeCapture : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint action, uint param, ref int value, uint winIni);
+
+    [DllImport("winmm.dll")]
+    private static extern uint timeBeginPeriod(uint period);
+
+    [DllImport("winmm.dll")]
+    private static extern uint timeEndPeriod(uint period);
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint point);

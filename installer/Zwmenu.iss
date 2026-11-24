@@ -3,7 +3,7 @@
 ; Настройки остаются в %LOCALAPPDATA%\Zwmenu и при переустановке не затираются.
 
 #define MyAppName "Zwmenu"
-#define MyAppVersion "1.3.77"
+#define MyAppVersion "1.3.78"
 #define MyAppExeName "Zwmenu.exe"
 #define PublishDir "..\publish\win-x64"
 
@@ -29,7 +29,7 @@ CloseApplications=force
 RestartApplications=no
 VersionInfoProductName=Zwmenu
 VersionInfoDescription=Установщик Zwmenu
-VersionInfoVersion=1.3.77.0
+VersionInfoVersion=1.3.78.0
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

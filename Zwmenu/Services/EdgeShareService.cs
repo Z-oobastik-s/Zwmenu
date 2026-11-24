@@ -35,6 +35,8 @@ public sealed class EdgeShareService : IDisposable
     private readonly ConcurrentQueue<byte[]> _outgoing = new();
     private readonly ConcurrentQueue<byte[]> _bulk = new();
     private int _bulkQueued;
+    // Младшие 32 бита dx, старшие dy. Один CAS без гонки двух полей.
+    private long _movePacked;
     private readonly EdgeFiles _files;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly object _gate = new();
@@ -62,7 +64,7 @@ public sealed class EdgeShareService : IDisposable
     {
         _files = new EdgeFiles(EnqueueBulk, RentBulk) { PasteIntoWindow = PasteIntoForeground };
         Zwmenu.Overlay.EdgeTransferHud.Cancel = () => _files.CancelActive();
-        _capture.Sink = Enqueue;
+        _capture.Sink = EnqueueCapture;
         Zwmenu.Overlay.EdgeCarryCue.HealCursor();
         _files.CarryVisual = label =>
         {
@@ -828,32 +830,16 @@ public sealed class EdgeShareService : IDisposable
                 while (true)
                 {
                     bool wrote = false;
+                    // Курсор всегда первым: не ждёт кнопки/workshop в общей очереди.
+                    if (await FlushPendingMoves(link.Stream, token).ConfigureAwait(false))
+                        wrote = true;
+
                     while (_outgoing.TryDequeue(out var body))
                     {
                         wrote = true;
-                        if (body.Length == 5 && body[0] == EdgeWire.MoveCode)
-                        {
-                            int dx = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(1));
-                            int dy = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(3));
-                            while (_outgoing.TryPeek(out var next)
-                                && next.Length == 5
-                                && next[0] == EdgeWire.MoveCode)
-                            {
-                                int nx = BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(1));
-                                int ny = BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(3));
-                                if (dx + nx is < short.MinValue or > short.MaxValue
-                                    || dy + ny is < short.MinValue or > short.MaxValue)
-                                    break;
-                                if (!_outgoing.TryDequeue(out next))
-                                    break;
-                                dx += BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(1));
-                                dy += BinaryPrimitives.ReadInt16LittleEndian(next.AsSpan(3));
-                            }
-
-                            body = EdgeWire.Move(dx, dy);
-                        }
-
                         await WriteBody(link.Stream, body, token, recycle: false).ConfigureAwait(false);
+                        if (await FlushPendingMoves(link.Stream, token).ConfigureAwait(false))
+                            wrote = true;
                     }
 
                     if (_bulk.TryDequeue(out var chunk))
@@ -862,6 +848,8 @@ public sealed class EdgeShareService : IDisposable
                         if (Interlocked.Decrement(ref _bulkQueued) < 0)
                             Interlocked.Exchange(ref _bulkQueued, 0);
                         await WriteBody(link.Stream, chunk, token, recycle: chunk.Length == EdgeWire.FilePacketSize).ConfigureAwait(false);
+                        if (await FlushPendingMoves(link.Stream, token).ConfigureAwait(false))
+                            wrote = true;
                     }
 
                     if (!wrote)
@@ -1105,6 +1093,65 @@ public sealed class EdgeShareService : IDisposable
     }
 
     private void Enqueue(byte[] body) => Queue(_outgoing, body);
+
+    void EnqueueCapture(byte[] body)
+    {
+        if (body.Length == 5 && body[0] == EdgeWire.MoveCode)
+        {
+            int dx = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(1));
+            int dy = BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(3));
+            AddPendingMove(dx, dy);
+            return;
+        }
+
+        Enqueue(body);
+    }
+
+    void AddPendingMove(int dx, int dy)
+    {
+        if (dx == 0 && dy == 0)
+            return;
+        while (true)
+        {
+            long cur = Interlocked.Read(ref _movePacked);
+            int curX = (int)(cur & 0xFFFFFFFF);
+            int curY = (int)(cur >> 32);
+            long nextX = (long)curX + dx;
+            long nextY = (long)curY + dy;
+            if (nextX is < short.MinValue or > short.MaxValue || nextY is < short.MinValue or > short.MaxValue)
+            {
+                try { _wake.Release(); } catch (SemaphoreFullException) { /* уже разбужен */ }
+                Enqueue(EdgeWire.Move(dx, dy));
+                return;
+            }
+
+            long next = (nextY << 32) | (uint)nextX;
+            if (Interlocked.CompareExchange(ref _movePacked, next, cur) == cur)
+            {
+                try { _wake.Release(); } catch (SemaphoreFullException) { /* уже разбужен */ }
+                return;
+            }
+        }
+    }
+
+    async Task<bool> FlushPendingMoves(NetworkStream stream, CancellationToken token)
+    {
+        bool wrote = false;
+        while (true)
+        {
+            long packed = Interlocked.Exchange(ref _movePacked, 0);
+            if (packed == 0)
+                break;
+            int dx = (int)(packed & 0xFFFFFFFF);
+            int dy = (int)(packed >> 32);
+            if (dx == 0 && dy == 0)
+                break;
+            await WriteBody(stream, EdgeWire.Move(dx, dy), token, recycle: false).ConfigureAwait(false);
+            wrote = true;
+        }
+
+        return wrote;
+    }
 
     private bool EnqueueBulk(byte[] body)
     {
