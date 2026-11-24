@@ -99,12 +99,16 @@ public static class WorkshopHub
                 {
                     float level = BinaryPrimitives.ReadSingleLittleEndian(body.AsSpan(2));
                     bool mute = body[6] != 0;
-                    DeskControl.ApplyPeerVolume(level, mute);
+                    // CoreAudio с сетевого потока часто молча не ставится. Только UI поток.
+                    OnUi(() => DeskControl.ApplyPeerVolume(level, mute));
                 }
                 break;
             case BrightnessSet:
                 if (body.Length >= 3)
-                    DeskControl.ApplyPeerBrightness(body[2]);
+                {
+                    byte level = body[2];
+                    OnUi(() => DeskControl.ApplyPeerBrightness(level));
+                }
                 break;
             case GlanceLiveStart:
                 StartLiveSend();
@@ -125,6 +129,27 @@ public static class WorkshopHub
 
     public static bool SendBrightnessToPeer(int level) =>
         Send(BrightnessSet, new byte[] { (byte)Math.Clamp(level, 0, 100) });
+
+    static void OnUi(Action work)
+    {
+        var app = Application.Current;
+        if (app?.Dispatcher == null)
+        {
+            try { work(); } catch { /* громкость/яркость не критичны */ }
+            return;
+        }
+
+        if (app.Dispatcher.CheckAccess())
+        {
+            try { work(); } catch { /* громкость/яркость не критичны */ }
+            return;
+        }
+
+        _ = app.Dispatcher.BeginInvoke(() =>
+        {
+            try { work(); } catch { /* громкость/яркость не критичны */ }
+        });
+    }
 
     public static bool StartPeerLive()
     {

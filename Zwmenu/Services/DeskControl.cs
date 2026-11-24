@@ -411,6 +411,34 @@ public static class DeskControl
 
     public static void ApplyPeerBrightness(int level) => SetAllBrightness(level);
 
+    /// <summary>Ставит громкость здесь и, если связь есть, на втором. Честный текст результата.</summary>
+    public static string SetMasterBoth(float level, bool mute)
+    {
+        level = Math.Clamp(level, 0f, 1f);
+        SetMasterVolume(level);
+        SetMasterMute(mute);
+        string here = mute ? "Тишина здесь." : ("Громкость здесь " + ((int)Math.Round(level * 100)) + "%.");
+        if (!EdgeShareService.Shared.Linked)
+            return here + " Второй не на связи.";
+        if (!WorkshopHub.SendVolumeToPeer(level, mute))
+            return here + " Второму не ушло.";
+        return mute
+            ? "Тишина на обоих."
+            : ("Громкость " + ((int)Math.Round(level * 100)) + "% на обоих.");
+    }
+
+    public static string SetBrightnessBoth(int level)
+    {
+        level = Math.Clamp(level, 0, 100);
+        SetAllBrightness(level);
+        string here = "Яркость здесь " + level + "%.";
+        if (!EdgeShareService.Shared.Linked)
+            return here + " Второй не на связи.";
+        if (!WorkshopHub.SendBrightnessToPeer(level))
+            return here + " Второму не ушло.";
+        return "Яркость " + level + "% на обоих.";
+    }
+
     [DllImport("powrprof.dll", SetLastError = true)]
     static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
 

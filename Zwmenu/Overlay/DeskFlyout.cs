@@ -59,40 +59,94 @@ static class DeskFlyout
             Cell("Выключить этот", () => tip(DeskControl.ShutdownLocal()), tip, "Только этот выключится.")));
 
         root.Children.Add(Head("Звук"));
+        bool dualVol = linked;
+        long lastPeerVol = 0;
+        float pendingVol = DeskControl.GetMasterVolume();
+        bool pendingMute = DeskControl.GetMasterMute();
+        var peerVolTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(90) };
+        peerVolTimer.Tick += (_, _) =>
+        {
+            peerVolTimer.Stop();
+            if (!dualVol || !EdgeShareService.Shared.Linked)
+                return;
+            WorkshopHub.SendVolumeToPeer(pendingVol, pendingMute);
+        };
+
+        void ApplyLocalVol(float level, bool muteNow, bool pushPeer)
+        {
+            level = Math.Clamp(level, 0f, 1f);
+            DeskControl.SetMasterVolume(level);
+            DeskControl.SetMasterMute(muteNow);
+            pendingVol = level;
+            pendingMute = muteNow;
+            if (!pushPeer || !dualVol)
+                return;
+            long now = Environment.TickCount64;
+            if (now - lastPeerVol >= 90)
+            {
+                lastPeerVol = now;
+                peerVolTimer.Stop();
+                if (EdgeShareService.Shared.Linked)
+                    WorkshopHub.SendVolumeToPeer(level, muteNow);
+            }
+            else
+            {
+                peerVolTimer.Stop();
+                peerVolTimer.Start();
+            }
+        }
+
+        root.Children.Add(TickRow(
+            "Громкость сразу на оба",
+            dualVol,
+            on =>
+            {
+                dualVol = on;
+                tip(on
+                    ? (linked
+                        ? "Ползунок и тишина идут на оба компьютера."
+                        : "Галка стоит, но второй не на связи. Сначала включи связь.")
+                    : "Ползунок крутит только этот компьютер.");
+            },
+            tip,
+            "Пока включено, ползунок и кнопки звука меняют оба компьютера. Нужна связь."));
+
         float vol = DeskControl.GetMasterVolume();
         bool mute = DeskControl.GetMasterMute();
         var volLabel = ValueLabel(mute ? "Тишина" : Pct(vol));
-        var volSlider = MakeSlider(0, 1, mute ? 0 : vol, tip, "Громкость этого компьютера.");
+        var volSlider = MakeSlider(0, 1, mute ? 0 : vol, tip, "Громкость. С галкой выше уходит и на второй.");
         volSlider.ValueChanged += (_, e) =>
         {
-            DeskControl.SetMasterVolume((float)e.NewValue);
-            if (DeskControl.GetMasterMute())
-                DeskControl.SetMasterMute(false);
-            volLabel.Text = Pct((float)e.NewValue);
+            float level = (float)e.NewValue;
+            ApplyLocalVol(level, muteNow: false, pushPeer: true);
+            volLabel.Text = Pct(level);
         };
         root.Children.Add(SliderLine(volSlider, volLabel));
         root.Children.Add(Grid2(
             Cell(mute ? "Включить звук" : "Без звука", () =>
             {
                 bool next = !DeskControl.GetMasterMute();
-                DeskControl.SetMasterMute(next);
-                tip(next ? "Звук этого компьютера выключен." : "Звук этого компьютера включён.");
-            }, tip, "Быстро выключить или вернуть звук здесь."),
+                float level = DeskControl.GetMasterVolume();
+                if (dualVol)
+                    tip(DeskControl.SetMasterBoth(level, next));
+                else
+                {
+                    DeskControl.SetMasterMute(next);
+                    tip(next ? "Звук этого компьютера выключен." : "Звук этого компьютера включён.");
+                }
+
+                volLabel.Text = next ? "Тишина" : Pct(level);
+            }, tip, "Тишина или звук. С галкой выше: на обоих."),
             Cell("Тишина оба", () =>
             {
-                DeskControl.SetMasterMute(true);
-                WorkshopHub.SendVolumeToPeer(DeskControl.GetMasterVolume(), true);
-                tip("Тишина на обоих.");
-            }, tip, "Выключает звук здесь и на втором.")));
-        root.Children.Add(WideCell("Как здесь на второй", () =>
+                dualVol = true;
+                tip(DeskControl.SetMasterBoth(DeskControl.GetMasterVolume(), mute: true));
+                volLabel.Text = "Тишина";
+            }, tip, "Выключает звук здесь и на втором. Честно пишет, ушло ли.")));
+        root.Children.Add(WideCell("Поставить оба как здесь", () =>
         {
-            float level = DeskControl.GetMasterVolume();
-            bool m = DeskControl.GetMasterMute();
-            if (!WorkshopHub.SendVolumeToPeer(level, m))
-                tip("Второй не принял громкость. Проверь связь.");
-            else
-                tip(m ? "Тишину отправил на второй." : "Громкость " + Pct(level) + " отправил на второй.");
-        }, tip, "Текущая громкость и тишина копируются на второй."));
+            tip(DeskControl.SetMasterBoth(DeskControl.GetMasterVolume(), DeskControl.GetMasterMute()));
+        }, tip, "Копирует текущую громкость и тишину на второй прямо сейчас."));
 
         var apps = new StackPanel();
         foreach (var app in DeskControl.ListAppVolumes().Take(5))
@@ -142,26 +196,63 @@ static class DeskFlyout
         }
         else
         {
+            bool dualBright = linked;
+            long lastPeerBright = 0;
+            int pendingBright = lamps[0].Level;
+            var peerBrightTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            peerBrightTimer.Tick += (_, _) =>
+            {
+                peerBrightTimer.Stop();
+                if (!dualBright || !EdgeShareService.Shared.Linked)
+                    return;
+                WorkshopHub.SendBrightnessToPeer(pendingBright);
+            };
+
+            root.Children.Add(TickRow(
+                "Яркость сразу на оба",
+                dualBright,
+                on =>
+                {
+                    dualBright = on;
+                    tip(on
+                        ? (linked
+                            ? "Ползунок яркости идёт на оба."
+                            : "Галка стоит, но второй не на связи.")
+                        : "Ползунок яркости только здесь.");
+                },
+                tip,
+                "Пока включено, яркость уходит и на второй компьютер."));
+
             int first = lamps[0].Level;
             var brightLabel = ValueLabel(first + "%");
-            var all = MakeSlider(0, 100, first, tip, "Яркость на экранах, которыми умеем крутить.");
+            var all = MakeSlider(0, 100, first, tip, "Яркость. С галкой выше уходит и на второй.");
             all.ValueChanged += (_, e) =>
             {
                 int level = (int)Math.Round(e.NewValue);
                 DeskControl.SetAllBrightness(level);
                 brightLabel.Text = level + "%";
-                tip("Яркость: " + level + "%");
+                pendingBright = level;
+                if (!dualBright)
+                    return;
+                long now = Environment.TickCount64;
+                if (now - lastPeerBright >= 120)
+                {
+                    lastPeerBright = now;
+                    peerBrightTimer.Stop();
+                    if (EdgeShareService.Shared.Linked)
+                        WorkshopHub.SendBrightnessToPeer(level);
+                }
+                else
+                {
+                    peerBrightTimer.Stop();
+                    peerBrightTimer.Start();
+                }
             };
             root.Children.Add(SliderLine(all, brightLabel));
-            root.Children.Add(WideCell("Яркость оба как здесь", () =>
+            root.Children.Add(WideCell("Поставить оба как здесь", () =>
             {
-                int level = (int)Math.Round(all.Value);
-                DeskControl.SetAllBrightness(level);
-                if (!WorkshopHub.SendBrightnessToPeer(level))
-                    tip("Второй не принял яркость. Проверь связь.");
-                else
-                    tip("Яркость " + level + "% отправил на второй.");
-            }, tip, "Ставит ту же яркость здесь и на втором."));
+                tip(DeskControl.SetBrightnessBoth((int)Math.Round(all.Value)));
+            }, tip, "Ставит ту же яркость здесь и на втором. Честно пишет, ушло ли."));
         }
 
         root.Children.Add(Head("Трансляция"));
