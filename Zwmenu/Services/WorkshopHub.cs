@@ -38,8 +38,12 @@ public static class WorkshopHub
     static string _printName = "file";
     static TaskCompletionSource<string>? _printWait;
     static int _liveToken;
+    static int _viewerLive;
+    static readonly object LiveSendGate = new();
 
     public static event Action<string>? Noted;
+
+    public static bool ViewerLive => Volatile.Read(ref _viewerLive) != 0;
 
     public static bool Send(byte verb, ReadOnlySpan<byte> rest)
     {
@@ -60,7 +64,11 @@ public static class WorkshopHub
                 MachineDesk.Leave(tellPeer: false);
                 break;
             case GlanceAsk:
-                Task.Run(CaptureAndSend);
+                Task.Run(() =>
+                {
+                    lock (LiveSendGate)
+                        CaptureAndSend(live: false);
+                });
                 break;
             case GlancePart:
                 TakeGlance(body);
@@ -118,9 +126,20 @@ public static class WorkshopHub
     public static bool SendBrightnessToPeer(int level) =>
         Send(BrightnessSet, new byte[] { (byte)Math.Clamp(level, 0, 100) });
 
-    public static bool StartPeerLive() => Send(GlanceLiveStart, ReadOnlySpan<byte>.Empty);
+    public static bool StartPeerLive()
+    {
+        Interlocked.Exchange(ref _viewerLive, 1);
+        if (Send(GlanceLiveStart, ReadOnlySpan<byte>.Empty))
+            return true;
+        Interlocked.Exchange(ref _viewerLive, 0);
+        return false;
+    }
 
-    public static bool StopPeerLive() => Send(GlanceLiveStop, ReadOnlySpan<byte>.Empty);
+    public static bool StopPeerLive()
+    {
+        Interlocked.Exchange(ref _viewerLive, 0);
+        return Send(GlanceLiveStop, ReadOnlySpan<byte>.Empty);
+    }
 
     static void StartLiveSend()
     {
@@ -129,8 +148,9 @@ public static class WorkshopHub
         {
             while (Volatile.Read(ref _liveToken) == token && EdgeShareService.Shared.Linked)
             {
-                CaptureAndSend();
-                try { await Task.Delay(700).ConfigureAwait(false); }
+                lock (LiveSendGate)
+                    CaptureAndSend(live: true);
+                try { await Task.Delay(550).ConfigureAwait(false); }
                 catch { break; }
             }
         });
@@ -194,23 +214,25 @@ public static class WorkshopHub
         return null;
     }
 
-    static void CaptureAndSend()
+    static void CaptureAndSend(bool live)
     {
         try
         {
             var screen = System.Windows.Forms.Screen.PrimaryScreen;
             if (screen == null)
             {
-                Reply("Экран не найден.");
+                if (!live)
+                    Reply("Экран не найден.");
                 return;
             }
 
             using var shot = ScreenCapture.CaptureMonitor(screen.Bounds, cursor: false);
-            byte[] jpeg = ToJpeg(shot);
+            byte[] jpeg = ToJpeg(shot, live);
             int count = Math.Max(1, (jpeg.Length + Chunk - 1) / Chunk);
             if (count > 40)
             {
-                Reply("Снимок слишком большой.");
+                if (!live)
+                    Reply("Снимок слишком большой.");
                 return;
             }
 
@@ -223,26 +245,30 @@ public static class WorkshopHub
                 Buffer.BlockCopy(jpeg, i * Chunk, rest, 4, n);
                 if (!Send(GlancePart, rest))
                 {
-                    Reply("Связь оборвалась, взгляд не дошёл.");
+                    if (!live)
+                        Reply("Связь оборвалась, взгляд не дошёл.");
                     return;
                 }
             }
         }
         catch (Exception ex)
         {
-            Reply("Взгляд не собрался: " + ex.Message);
+            if (!live)
+                Reply("Взгляд не собрался: " + ex.Message);
         }
     }
 
-    static byte[] ToJpeg(Draw.Bitmap source)
+    static byte[] ToJpeg(Draw.Bitmap source, bool live)
     {
         Draw.Bitmap? scaled = null;
         try
         {
             Draw.Bitmap bmp = source;
-            if (source.Width > 800)
+            int maxW = live ? 640 : 800;
+            long quality = live ? 28L : 35L;
+            if (source.Width > maxW)
             {
-                int width = 800;
+                int width = maxW;
                 int height = Math.Max(1, source.Height * width / source.Width);
                 scaled = new Draw.Bitmap(width, height);
                 using (var g = Draw.Graphics.FromImage(scaled))
@@ -252,7 +278,7 @@ public static class WorkshopHub
 
             var encoder = ImageCodecInfo.GetImageEncoders().First(e => e.FormatID == ImageFormat.Jpeg.Guid);
             using var parameters = new EncoderParameters(1);
-            parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 35L);
+            parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
             using var stream = new MemoryStream();
             bmp.Save(stream, encoder, parameters);
             return stream.ToArray();
@@ -307,7 +333,7 @@ public static class WorkshopHub
             _parts = null;
         }
 
-        Zwmenu.Overlay.GlanceWindow.ShowJpeg(jpeg);
+        Zwmenu.Overlay.GlanceWindow.ShowJpeg(jpeg, live: ViewerLive);
     }
 
     static void BeginPrint(byte[] body)

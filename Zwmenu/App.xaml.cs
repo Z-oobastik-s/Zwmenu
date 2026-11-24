@@ -39,6 +39,13 @@ public partial class App: Application
             return;
         }
 
+        if (e.Args.Any(a => string.Equals(a, "--desk-preview", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            DeskFlyoutPreview.Run();
+            return;
+        }
+
         if (e.Args.Any(a => string.Equals(a, "--selfcheck", StringComparison.OrdinalIgnoreCase)))
         {
             string report = Path.Combine(Path.GetTempPath(), "zwmenu-selfcheck.txt");

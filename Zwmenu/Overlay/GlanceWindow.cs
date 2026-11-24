@@ -23,6 +23,8 @@ public sealed class GlanceWindow : Window
         Width = 960;
         Height = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        Topmost = true;
+        ShowInTaskbar = true;
         TemplateTheme.StyleWindow(this);
         _image = new System.Windows.Controls.Image
         {

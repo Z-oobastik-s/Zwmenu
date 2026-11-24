@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Zwmenu.Services;
@@ -9,38 +10,33 @@ namespace Zwmenu.Overlay;
 /// <summary>Выезд пульта с колеса: край, питание, звук, яркость, трансляция.</summary>
 static class DeskFlyout
 {
+    const double PanelW = 340;
+
     public static Border Build(Action<string> tip, Action dismiss)
     {
-        var root = new StackPanel { Width = 320, Margin = new Thickness(10) };
-        var note = new TextBlock
-        {
-            Text = EdgeShareService.Shared.Linked
-                ? "Второй на связи: " + (EdgeShareService.Shared.PeerName ?? "ок")
-                : "Второй не на связи. Часть кнопок сработает только здесь.",
-            Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
-            FontSize = 11.5,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
-        };
-        root.Children.Add(note);
+        var root = new StackPanel { Width = PanelW };
 
-        root.Children.Add(Head("Два экрана"));
-        var edge = Tick(
-            EdgeShareService.Shared.MouseCross ? "Переход курсора включён" : "Переход курсора выключен",
+        bool linked = EdgeShareService.Shared.Linked;
+        string peer = EdgeShareService.Shared.PeerName ?? "второй";
+        root.Children.Add(StatusBanner(
+            linked ? "На связи: " + peer : "Второй не на связи",
+            linked));
+
+        root.Children.Add(Head("Экраны"));
+        root.Children.Add(TickRow(
+            "Курсор на второй по краю",
             EdgeShareService.Shared.MouseCross,
             on =>
             {
                 EdgeShareService.Shared.MouseCross = on;
                 tip(on
-                    ? "Курсор снова может уходить на второй ноутбук по краю."
-                    : "Край закрыт. Курсор остаётся на этом экране.");
+                    ? "Курсор может уходить на второй ноутбук по краю."
+                    : "Край закрыт. Курсор остаётся здесь.");
             },
             tip,
-            "Пока включено, мышь у края уходит на второй ноутбук. Выключи, если играешь и не хочешь случайно уехать.");
-        root.Children.Add(edge);
-
-        var link = Tick(
-            EdgeShareService.Shared.Running ? "Связь двух экранов включена" : "Связь двух экранов выключена",
+            "Пока включено, мышь у края уходит на второй. Выключи в игре, если не хочешь случайно уехать."));
+        root.Children.Add(TickRow(
+            "Связь двух Zwmenu",
             EdgeShareService.Shared.Running,
             on =>
             {
@@ -51,105 +47,67 @@ static class DeskFlyout
                 tip(EdgeShareService.Shared.Status);
             },
             tip,
-            "Ищет второй Zwmenu в сети и держит канал для мыши, файлов и пульта.");
-        root.Children.Add(link);
+            "Ищет второй Zwmenu в сети и держит канал для мыши, файлов и пульта."));
 
         root.Children.Add(Head("Питание"));
-        root.Children.Add(Row(
-            Pill("Сон оба", () => tip(DeskControl.SleepBoth()), tip, "Оба компьютера уходят в сон."),
-            Pill("Сон этот", () => tip(DeskControl.SleepLocal()), tip, "Только этот компьютер уходит в сон.")));
-        root.Children.Add(Row(
-            Pill("Перезагрузка оба", () => tip(DeskControl.RebootBoth()), tip, "Оба компьютера перезагрузятся через секунду."),
-            Pill("Перезагрузка этот", () => tip(DeskControl.RebootLocal()), tip, "Только этот компьютер перезагрузится.")));
-        root.Children.Add(Row(
-            Pill("Выключить оба", () => tip(DeskControl.ShutdownBoth()), tip, "Оба компьютера выключатся через секунду."),
-            Pill("Выключить этот", () => tip(DeskControl.ShutdownLocal()), tip, "Только этот компьютер выключится.")));
+        root.Children.Add(Grid2(
+            Cell("Сон оба", () => tip(DeskControl.SleepBoth()), tip, "Оба компьютера уходят в сон."),
+            Cell("Сон этот", () => tip(DeskControl.SleepLocal()), tip, "Только этот компьютер уходит в сон."),
+            Cell("Перезагрузка оба", () => tip(DeskControl.RebootBoth()), tip, "Оба перезагрузятся через секунду."),
+            Cell("Перезагрузка этот", () => tip(DeskControl.RebootLocal()), tip, "Только этот перезагрузится."),
+            Cell("Выключить оба", () => tip(DeskControl.ShutdownBoth()), tip, "Оба выключатся через секунду."),
+            Cell("Выключить этот", () => tip(DeskControl.ShutdownLocal()), tip, "Только этот выключится.")));
 
         root.Children.Add(Head("Звук"));
         float vol = DeskControl.GetMasterVolume();
         bool mute = DeskControl.GetMasterMute();
-        var volLabel = new TextBlock
-        {
-            Text = mute ? "Тишина" : ((int)Math.Round(vol * 100)) + "%",
-            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
-            FontSize = 12,
-            Width = 64,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var volSlider = new Slider
-        {
-            Minimum = 0,
-            Maximum = 1,
-            Value = vol,
-            Width = 160,
-            VerticalAlignment = VerticalAlignment.Center,
-            IsMoveToPointEnabled = true
-        };
-        ArmTip(volSlider, tip, "Громкость этого компьютера. Ползунок сразу меняет звук.");
+        var volLabel = ValueLabel(mute ? "Тишина" : Pct(vol));
+        var volSlider = MakeSlider(0, 1, mute ? 0 : vol, tip, "Громкость этого компьютера.");
         volSlider.ValueChanged += (_, e) =>
         {
             DeskControl.SetMasterVolume((float)e.NewValue);
             if (DeskControl.GetMasterMute())
                 DeskControl.SetMasterMute(false);
-            volLabel.Text = ((int)Math.Round(e.NewValue * 100)) + "%";
+            volLabel.Text = Pct((float)e.NewValue);
         };
-        var muteBtn = Pill(mute ? "Включить звук" : "Выключить звук", () =>
-        {
-            bool next = !DeskControl.GetMasterMute();
-            DeskControl.SetMasterMute(next);
-            tip(next ? "Звук этого компьютера выключен." : "Звук этого компьютера включён.");
-        }, tip, "Быстро выключить или вернуть звук на этом компьютере.");
-        root.Children.Add(Row(volSlider, volLabel));
-        root.Children.Add(muteBtn);
-        root.Children.Add(Row(
-            Pill("Звук оба", () =>
+        root.Children.Add(SliderLine(volSlider, volLabel));
+        root.Children.Add(Grid2(
+            Cell(mute ? "Включить звук" : "Без звука", () =>
             {
-                float level = DeskControl.GetMasterVolume();
-                bool m = DeskControl.GetMasterMute();
-                WorkshopHub.SendVolumeToPeer(level, m);
-                tip(m ? "Тишину отправил и сюда, и на второй." : "Громкость " + ((int)Math.Round(level * 100)) + "% отправил на второй.");
-            }, tip, "Текущая громкость и тишина этого компьютера копируются на второй."),
-            Pill("Тишина оба", () =>
+                bool next = !DeskControl.GetMasterMute();
+                DeskControl.SetMasterMute(next);
+                tip(next ? "Звук этого компьютера выключен." : "Звук этого компьютера включён.");
+            }, tip, "Быстро выключить или вернуть звук здесь."),
+            Cell("Тишина оба", () =>
             {
                 DeskControl.SetMasterMute(true);
                 WorkshopHub.SendVolumeToPeer(DeskControl.GetMasterVolume(), true);
                 tip("Тишина на обоих.");
-            }, tip, "Выключает звук здесь и просит второй сделать то же.")));
-
-        var apps = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-        foreach (var app in DeskControl.ListAppVolumes())
+            }, tip, "Выключает звук здесь и на втором.")));
+        root.Children.Add(WideCell("Как здесь на второй", () =>
         {
-            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-            var name = new TextBlock
-            {
-                Text = Trim(app.Name, 18),
-                Width = 110,
-                Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
-                FontSize = 11.5,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            var slider = new Slider
-            {
-                Minimum = 0,
-                Maximum = 1,
-                Value = app.Level,
-                Width = 120,
-                VerticalAlignment = VerticalAlignment.Center,
-                IsMoveToPointEnabled = true,
-                Tag = app.Id
-            };
-            ArmTip(slider, tip, "Громкость «" + app.Name + "». Только на этом компьютере.");
+            float level = DeskControl.GetMasterVolume();
+            bool m = DeskControl.GetMasterMute();
+            if (!WorkshopHub.SendVolumeToPeer(level, m))
+                tip("Второй не принял громкость. Проверь связь.");
+            else
+                tip(m ? "Тишину отправил на второй." : "Громкость " + Pct(level) + " отправил на второй.");
+        }, tip, "Текущая громкость и тишина копируются на второй."));
+
+        var apps = new StackPanel();
+        foreach (var app in DeskControl.ListAppVolumes().Take(5))
+        {
+            var label = ValueLabel(Trim(app.Name, 16), dim: true);
+            label.Width = 108;
+            var slider = MakeSlider(0, 1, app.Level, tip, "Громкость «" + app.Name + "».");
             string appId = app.Id;
             string appName = app.Name;
             slider.ValueChanged += (_, e) =>
             {
                 DeskControl.SetAppVolume(appId, (float)e.NewValue);
-                tip(appName + ": " + ((int)Math.Round(e.NewValue * 100)) + "%");
+                tip(appName + ": " + Pct((float)e.NewValue));
             };
-            DockPanel.SetDock(name, Dock.Left);
-            row.Children.Add(name);
-            row.Children.Add(slider);
-            apps.Children.Add(row);
+            apps.Children.Add(SliderLine(slider, label, labelFirst: true));
         }
 
         if (apps.Children.Count == 0)
@@ -158,92 +116,50 @@ static class DeskFlyout
             {
                 Text = "Сейчас нет программ со звуком.",
                 Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
-                FontSize = 11.5
+                FontSize = 11.5,
+                Margin = new Thickness(0, 2, 0, 2)
             });
         }
 
-        root.Children.Add(MakeHiddenScroll(apps, 120));
+        root.Children.Add(MakeHiddenScroll(apps, 72));
 
         root.Children.Add(Head("Яркость"));
         var lamps = DeskControl.ListScreens();
         if (lamps.Count == 0)
         {
-            root.Children.Add(new TextBlock
-            {
-                Text = "Яркость этим путём недоступна.",
-                Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
-                FontSize = 11.5
-            });
+            root.Children.Add(Dim("Яркость этим путём недоступна."));
         }
         else
         {
             int first = lamps[0].Level;
-            var all = new Slider
-            {
-                Minimum = 0,
-                Maximum = 100,
-                Value = first,
-                Width = 200,
-                IsMoveToPointEnabled = true,
-                Margin = new Thickness(0, 2, 0, 4)
-            };
-            ArmTip(all, tip, "Яркость сразу на всех экранах, которыми умеем крутить. На части внешних мониторов сработает через DDC.");
+            var brightLabel = ValueLabel(first + "%");
+            var all = MakeSlider(0, 100, first, tip, "Яркость на экранах, которыми умеем крутить.");
             all.ValueChanged += (_, e) =>
             {
                 int level = (int)Math.Round(e.NewValue);
                 DeskControl.SetAllBrightness(level);
-                tip("Яркость этого компьютера: " + level + "%");
+                brightLabel.Text = level + "%";
+                tip("Яркость: " + level + "%");
             };
-            root.Children.Add(all);
-            root.Children.Add(Pill("Яркость оба как здесь", () =>
+            root.Children.Add(SliderLine(all, brightLabel));
+            root.Children.Add(WideCell("Яркость оба как здесь", () =>
             {
                 int level = (int)Math.Round(all.Value);
                 DeskControl.SetAllBrightness(level);
-                WorkshopHub.SendBrightnessToPeer(level);
-                tip("Яркость " + level + "% отправил и сюда, и на второй.");
-            }, tip, "Ставит ту же яркость на этом компьютере и просит второй повторить."));
-
-            foreach (var lamp in lamps)
-            {
-                var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-                var name = new TextBlock
-                {
-                    Text = Trim(lamp.Name, 16),
-                    Width = 120,
-                    Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
-                    FontSize = 11.5,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                var slider = new Slider
-                {
-                    Minimum = 0,
-                    Maximum = 100,
-                    Value = lamp.Level,
-                    Width = 140,
-                    IsEnabled = lamp.CanSet,
-                    IsMoveToPointEnabled = true
-                };
-                string lampId = lamp.Id;
-                string lampName = lamp.Name;
-                ArmTip(slider, tip, lamp.CanSet
-                    ? "Яркость «" + lamp.Name + "»."
-                    : "Этот монитор яркость из программы не принимает. Кнопки на корпусе.");
-                slider.ValueChanged += (_, e) =>
-                {
-                    int level = (int)Math.Round(e.NewValue);
-                    DeskControl.SetBrightness(lampId, level);
-                    tip(lampName + ": " + level + "%");
-                };
-                DockPanel.SetDock(name, Dock.Left);
-                row.Children.Add(name);
-                row.Children.Add(slider);
-                root.Children.Add(row);
-            }
+                if (!WorkshopHub.SendBrightnessToPeer(level))
+                    tip("Второй не принял яркость. Проверь связь.");
+                else
+                    tip("Яркость " + level + "% отправил на второй.");
+            }, tip, "Ставит ту же яркость здесь и на втором."));
         }
 
         root.Children.Add(Head("Трансляция"));
-        root.Children.Add(Row(
-            Pill("Взгляд на второй", () =>
+        var liveNote = Dim(linked
+            ? "Взгляд: один кадр. Трансляция: кадры подряд, пока не остановишь."
+            : "Без связи с вторым кадры не придут. Включи связь выше.");
+        root.Children.Add(liveNote);
+        root.Children.Add(Grid2(
+            Cell("Один кадр", () =>
             {
                 if (!EdgeShareService.Shared.Linked)
                 {
@@ -254,9 +170,9 @@ static class DeskFlyout
                 if (!WorkshopHub.Send(WorkshopHub.GlanceAsk, ReadOnlySpan<byte>.Empty))
                     tip("Запрос не ушёл.");
                 else
-                    tip("Прошу один кадр со второго.");
+                    tip("Жду один кадр со второго. Окно откроется само.");
             }, tip, "Один снимок экрана второго компьютера."),
-            Pill("Трансляция со второго", () =>
+            Cell("Трансляция", () =>
             {
                 if (!EdgeShareService.Shared.Linked)
                 {
@@ -266,31 +182,54 @@ static class DeskFlyout
 
                 GlanceWindow.MarkLive();
                 if (!WorkshopHub.StartPeerLive())
-                    tip("Трансляцию не удалось начать.");
-                else
-                    tip("Второй шлёт кадры. Окно откроется само.");
-            }, tip, "Второй компьютер шлёт кадры экрана сюда, пока не остановишь.")));
-        root.Children.Add(Row(
-            Pill("Остановить трансляцию", () =>
+                {
+                    tip("Трансляцию не удалось начать. Связь оборвалась.");
+                    return;
+                }
+
+                tip("Второй шлёт кадры. Окно «Экран второго» уже открыто.");
+            }, tip, "Второй шлёт кадры экрана сюда, пока не остановишь.", accent: true),
+            Cell("Стоп", () =>
             {
                 WorkshopHub.StopPeerLive();
                 tip("Трансляцию остановил.");
-            }, tip, "Просит второй компьютер перестать слать кадры."),
-            Pill("Мастерская", () =>
+            }, tip, "Просит второй перестать слать кадры."),
+            Cell("Мастерская", () =>
             {
                 dismiss();
                 WorkshopWindow.ShowCurrent();
-            }, tip, "Старое окно мастерской: печать, сеть, уход и прочее.")));
+            }, tip, "Окно мастерской: печать, сеть и прочее.")));
 
         return new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xF2, 0x12, 0x14, 0x18)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0xAA, 0x3A, 0x4A, 0x52)),
+            Background = new SolidColorBrush(Color.FromArgb(0xF5, 0x14, 0x16, 0x1A)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0xCC, 0x3A, 0x48, 0x52)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(4),
-            Child = MakeHiddenScroll(root, 520),
-            Width = 348
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(12, 10, 12, 12),
+            Child = MakeHiddenScroll(root, 620),
+            Width = 364,
+            SnapsToDevicePixels = true
+        };
+    }
+
+    static Border StatusBanner(string text, bool ok)
+    {
+        return new Border
+        {
+            Background = new SolidColorBrush(ok
+                ? Color.FromArgb(0x55, 0x2A, 0x5A, 0x3A)
+                : Color.FromArgb(0x55, 0x5A, 0x3A, 0x2A)),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 7, 10, 7),
+            Margin = new Thickness(0, 0, 0, 8),
+            Child = new TextBlock
+            {
+                Text = text,
+                Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap
+            }
         };
     }
 
@@ -298,45 +237,139 @@ static class DeskFlyout
     {
         Text = text,
         Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
-        FontSize = 12.5,
+        FontSize = 12,
         FontWeight = FontWeights.SemiBold,
-        Margin = new Thickness(0, 10, 0, 4)
+        Margin = new Thickness(0, 10, 0, 6)
     };
 
-    static StackPanel Row(params UIElement[] kids)
+    static TextBlock Dim(string text) => new()
     {
-        var row = new StackPanel
-        {
-            Orientation = System.Windows.Controls.Orientation.Horizontal,
-            Margin = new Thickness(0, 2, 0, 2)
-        };
-        foreach (var kid in kids)
-        {
-            if (kid is FrameworkElement fe)
-                fe.Margin = new Thickness(0, 0, 6, 0);
-            row.Children.Add(kid);
-        }
+        Text = text,
+        Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
+        FontSize = 11.5,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 6)
+    };
 
-        return row;
+    static TextBlock ValueLabel(string text, bool dim = false) => new()
+    {
+        Text = text,
+        Foreground = TemplateTheme.Brush(dim ? TemplateTheme.FgDim : TemplateTheme.Fg),
+        FontSize = 12,
+        Width = 56,
+        TextAlignment = TextAlignment.Right,
+        VerticalAlignment = VerticalAlignment.Center
+    };
+
+    static UniformGrid Grid2(params Border[] cells)
+    {
+        var grid = new UniformGrid
+        {
+            Columns = 2,
+            Margin = new Thickness(0, 0, 0, 2)
+        };
+        foreach (var cell in cells)
+            grid.Children.Add(cell);
+        return grid;
     }
 
-    static Border Pill(string text, Action click, Action<string> tip, string help)
+    static Border WideCell(string text, Action click, Action<string> tip, string help, bool accent = false)
     {
-        var border = TemplateTheme.Pill(text, click);
-        border.Margin = new Thickness(0, 2, 0, 2);
+        var border = Cell(text, click, tip, help, accent);
+        border.Margin = new Thickness(2, 2, 2, 2);
+        return border;
+    }
+
+    static Border Cell(string text, Action click, Action<string> tip, string help, bool accent = false)
+    {
+        var label = new TextBlock
+        {
+            Text = text,
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 12,
+            FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var fill = accent ? TemplateTheme.Accent : TemplateTheme.BtnBg;
+        var hover = accent ? TemplateTheme.AccentHover : TemplateTheme.BtnHover;
+        var border = new Border
+        {
+            Background = TemplateTheme.Brush(fill),
+            BorderBrush = TemplateTheme.Brush(TemplateTheme.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8, 9, 8, 9),
+            Margin = new Thickness(3),
+            MinHeight = 38,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Child = label,
+            SnapsToDevicePixels = true
+        };
+        border.MouseEnter += (_, _) => border.Background = TemplateTheme.Brush(hover);
+        border.MouseLeave += (_, _) => border.Background = TemplateTheme.Brush(fill);
+        border.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            try { click(); } catch { /* кнопка не валит окно */ }
+        };
         ArmTip(border, tip, help);
         return border;
     }
 
-    static System.Windows.Controls.CheckBox Tick(string text, bool on, Action<bool> change, Action<string> tip, string help)
+    static System.Windows.Controls.CheckBox TickRow(string text, bool on, Action<bool> change, Action<string> tip, string help)
     {
         var box = TemplateTheme.Tick(text);
         box.IsChecked = on;
-        box.Margin = new Thickness(0, 2, 0, 4);
+        box.Margin = new Thickness(2, 2, 2, 4);
         box.Checked += (_, _) => change(true);
         box.Unchecked += (_, _) => change(false);
         ArmTip(box, tip, help);
         return box;
+    }
+
+    static Slider MakeSlider(double min, double max, double value, Action<string> tip, string help)
+    {
+        var slider = new Slider
+        {
+            Minimum = min,
+            Maximum = max,
+            Value = value,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsMoveToPointEnabled = true,
+            Focusable = true,
+            MinHeight = 28,
+            Height = 28
+        };
+        ArmTip(slider, tip, help);
+        return slider;
+    }
+
+    static DockPanel SliderLine(Slider slider, TextBlock label, bool labelFirst = false)
+    {
+        var row = new DockPanel { Margin = new Thickness(2, 2, 2, 4), LastChildFill = true };
+        if (labelFirst)
+        {
+            DockPanel.SetDock(label, Dock.Left);
+            label.Margin = new Thickness(0, 0, 8, 0);
+            label.TextAlignment = TextAlignment.Left;
+            row.Children.Add(label);
+            row.Children.Add(slider);
+        }
+        else
+        {
+            DockPanel.SetDock(label, Dock.Right);
+            label.Margin = new Thickness(8, 0, 0, 0);
+            row.Children.Add(label);
+            row.Children.Add(slider);
+        }
+
+        return row;
     }
 
     static void ArmTip(FrameworkElement el, Action<string> tip, string help)
@@ -352,11 +385,7 @@ static class DeskFlyout
             timer.Stop();
             timer.Start();
         };
-        el.MouseLeave += (_, _) =>
-        {
-            timer.Stop();
-            tip("");
-        };
+        el.MouseLeave += (_, _) => timer.Stop();
     }
 
     static ScrollViewer MakeHiddenScroll(UIElement content, double height) =>
@@ -372,6 +401,8 @@ static class DeskFlyout
             BorderThickness = new Thickness(0),
             Background = Brushes.Transparent
         };
+
+    static string Pct(float v) => ((int)Math.Round(Math.Clamp(v, 0f, 1f) * 100)) + "%";
 
     static string Trim(string text, int max) =>
         text.Length <= max ? text : text[..Math.Max(1, max - 1)] + "...";

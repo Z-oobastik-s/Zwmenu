@@ -93,7 +93,7 @@ public static class DeskControl
                 using var session = sessions[i];
                 if (session == null)
                     continue;
-                string name = session.DisplayName?.Trim() ?? "";
+                string name = NiceAppName(session.DisplayName);
                 if (name.Length == 0)
                 {
                     try
@@ -113,6 +113,24 @@ public static class DeskControl
 
                 if (name.Length == 0)
                     name = "Приложение";
+                // Служебные и путь вместо имени не показываем.
+                if (name.StartsWith('%') || name.Contains('\\') || name.Contains('/')
+                    || name.Contains("SystemRoot", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("System32", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        uint pid = session.GetProcessID;
+                        if (pid != 0)
+                        {
+                            using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                            if (!string.IsNullOrWhiteSpace(proc.ProcessName))
+                                name = proc.ProcessName;
+                        }
+                    }
+                    catch { /* оставим как есть */ }
+                }
+
                 string id = session.GetSessionIdentifier ?? name + ":" + i;
                 list.Add(new AppVolume
                 {
@@ -134,6 +152,16 @@ public static class DeskControl
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .Take(18)
             .ToList();
+    }
+
+    static string NiceAppName(string? raw)
+    {
+        string name = (raw ?? "").Trim();
+        if (name.Length == 0)
+            return "";
+        if (name.StartsWith('%') || name.Contains('\\') || name.Contains('/'))
+            return "";
+        return name;
     }
 
     public static void SetAppVolume(string id, float level, bool? mute = null)

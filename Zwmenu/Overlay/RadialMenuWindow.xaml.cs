@@ -2042,14 +2042,29 @@ public partial class RadialMenuWindow: Window
         if (_flyoutParent?.IsMouseOver == true) return true;
         if (_flyoutPanel?.IsMouseOver == true) return true;
         if (_peekPanel?.IsMouseOver == true) return true;
+        if (HintCard.IsMouseOver) return true;
         if (_flyout.Any(el => el.IsMouseOver)) return true;
 
-        // Геометрический «мост» между панелями: щель не закрывает меню.
-        if (_flyoutPanel != null && _peekPanel != null)
+        try
         {
-            try
+            Point pos = Mouse.GetPosition(RingCanvas);
+            // Мост от кнопки кольца до выезда: курсор в щели не снимает панель.
+            if (_flyoutPanel != null && _flyoutParent != null)
             {
-                Point pos = Mouse.GetPosition(RingCanvas);
+                var panel = PanelRect(_flyoutPanel);
+                var btn = new Rect(
+                    Canvas.GetLeft(_flyoutParent),
+                    Canvas.GetTop(_flyoutParent),
+                    Math.Max(1, _flyoutParent.ActualWidth > 1 ? _flyoutParent.ActualWidth : _flyoutParent.Width),
+                    Math.Max(1, _flyoutParent.ActualHeight > 1 ? _flyoutParent.ActualHeight : _flyoutParent.Height));
+                var hull = Rect.Union(panel, btn);
+                hull.Inflate(18, 18);
+                if (hull.Contains(pos))
+                    return true;
+            }
+
+            if (_flyoutPanel != null && _peekPanel != null)
+            {
                 var a = PanelRect(_flyoutPanel);
                 var b = PanelRect(_peekPanel);
                 var hull = Rect.Union(a, b);
@@ -2057,8 +2072,8 @@ public partial class RadialMenuWindow: Window
                 if (hull.Contains(pos))
                     return true;
             }
-            catch { /* ignore */ }
         }
+        catch { /* ignore */ }
 
         return false;
     }
@@ -2198,7 +2213,10 @@ public partial class RadialMenuWindow: Window
     private void ScheduleHideFlyout()
     {
         _hideFlyoutTimer ??= new System.Windows.Threading.DispatcherTimer();
-        _hideFlyoutTimer.Interval = TimeSpan.FromMilliseconds(_peekPanel != null ? 380 : 220);
+        // Пульт с ползунками: дольше держим, иначе щель до панели убивает выезд.
+        bool desk = _flyoutPanel?.Tag as string == "desk";
+        _hideFlyoutTimer.Interval = TimeSpan.FromMilliseconds(
+            desk ? 700 : _peekPanel != null ? 380 : 220);
         _hideFlyoutTimer.Stop();
         _hideFlyoutTimer.Tick -= HideFlyoutTick;
         _hideFlyoutTimer.Tick += HideFlyoutTick;
@@ -2250,7 +2268,29 @@ public partial class RadialMenuWindow: Window
     {
         if (FindButton(e.OriginalSource as DependencyObject) != null)
             return;
+        // Пульт: ползунки, галочки и Pill (Border) не Button. Клик внутри выезда не закрывает колесо.
+        if (IsInsideKeepAliveUi(e.OriginalSource as DependencyObject))
+            return;
+        if (IsMouseInFlyoutCluster())
+            return;
         Dismissed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private bool IsInsideKeepAliveUi(DependencyObject? source)
+    {
+        while (source != null)
+        {
+            if (ReferenceEquals(source, _flyoutPanel)
+                || ReferenceEquals(source, _peekPanel)
+                || ReferenceEquals(source, HintCard))
+                return true;
+            if (source is Slider or System.Windows.Controls.Primitives.Thumb
+                or System.Windows.Controls.CheckBox or ScrollViewer)
+                return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
     }
 
     private static Button? FindButton(DependencyObject? source)
@@ -2284,13 +2324,15 @@ public partial class RadialMenuWindow: Window
         }
 
         var panel = DeskFlyout.Build(Tip, () => Dismissed?.Invoke(this, EventArgs.Empty));
+        panel.Tag = "desk";
         panel.MouseEnter += FlyoutKeepAliveEnter;
         panel.MouseLeave += FlyoutKeepAliveLeave;
         _flyoutPanel = panel;
         RingCanvas.Children.Add(panel);
         _flyout.Add(panel);
-        panel.Measure(new System.Windows.Size(360, 560));
-        AttachFlyout(parent, panel, 348, Math.Max(panel.DesiredSize.Height, 220));
+        panel.Measure(new System.Windows.Size(400, 720));
+        double wantH = Math.Max(panel.DesiredSize.Height, 280);
+        AttachFlyout(parent, panel, 360, wantH);
     }
 
     void ArmHint(MenuAction action)
