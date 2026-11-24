@@ -97,17 +97,28 @@ static class DeskFlyout
         var apps = new StackPanel();
         foreach (var app in DeskControl.ListAppVolumes().Take(5))
         {
-            var label = ValueLabel(Trim(app.Name, 16), dim: true);
-            label.Width = 108;
+            var name = ValueLabel(Trim(app.Name, 14), dim: true);
+            name.Width = 96;
+            name.TextAlignment = TextAlignment.Left;
+            var pct = ValueLabel(Pct(app.Level));
             var slider = MakeSlider(0, 1, app.Level, tip, "Громкость «" + app.Name + "».");
             string appId = app.Id;
             string appName = app.Name;
             slider.ValueChanged += (_, e) =>
             {
                 DeskControl.SetAppVolume(appId, (float)e.NewValue);
-                tip(appName + ": " + Pct((float)e.NewValue));
+                pct.Text = Pct((float)e.NewValue);
+                tip(appName + ": " + pct.Text);
             };
-            apps.Children.Add(SliderLine(slider, label, labelFirst: true));
+            var row = new DockPanel { Margin = new Thickness(2, 2, 2, 4), LastChildFill = true };
+            DockPanel.SetDock(name, Dock.Left);
+            DockPanel.SetDock(pct, Dock.Right);
+            name.Margin = new Thickness(0, 0, 8, 0);
+            pct.Margin = new Thickness(8, 0, 0, 0);
+            row.Children.Add(name);
+            row.Children.Add(pct);
+            row.Children.Add(slider);
+            apps.Children.Add(row);
         }
 
         if (apps.Children.Count == 0)
