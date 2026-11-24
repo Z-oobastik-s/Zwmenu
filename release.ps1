@@ -110,7 +110,7 @@ function Find-PreviousManifest {
   return $null
 }
 
-$patch = Join-Path $root "dist\Zwmenu-Patch.zip"
+$patch = Join-Path $root "dist\Zwmenu-Delta.zip"
 $patchReady = $false
 $prevText = Find-PreviousManifest
 $changed = New-Object System.Collections.Generic.List[object]
@@ -139,7 +139,12 @@ if (-not $FullOnly -and $changed.Count -gt 0) {
     }
   }
 
-  $stage = Join-Path $env:TEMP ("zwmenu-patch-" + [guid]::NewGuid().ToString("N"))
+  $rawSum = 0L
+  foreach ($f in $changed) { $rawSum += [int64]$f.size }
+  if ($rawSum -ge 200000000) {
+    Write-Host ("Zaplatka v raspackovke " + $rawSum + " bait, slishkom mnogo. Gruzhu tolko ustanovshik.")
+  } else {
+  $stage = Join-Path $env:TEMP ("zwmenu-delta-" + [guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Force -Path $stage | Out-Null
   try {
     $patchFiles = @()
@@ -150,12 +155,12 @@ if (-not $FullOnly -and $changed.Count -gt 0) {
       $destDir = Split-Path -Parent $dest
       if ($destDir) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
       Copy-Item -LiteralPath $src -Destination $dest -Force
-      $patchFiles += [ordered]@{ path = $f.path; sha256 = $f.sha256; size = $f.size }
+      $patchFiles += [ordered]@{ path = $f.path; sha256 = $f.sha256; size = [int64]$f.size }
     }
 
     $patchIndex = [ordered]@{
       version = $version
-      files = $patchFiles
+      files = @($patchFiles)
     }
     $indexPath = Join-Path $stage "Zwmenu.patch.json"
     [IO.File]::WriteAllText($indexPath, ($patchIndex | ConvertTo-Json -Depth 6 -Compress), [Text.UTF8Encoding]::new($false))
@@ -192,6 +197,7 @@ if (-not $FullOnly -and $changed.Count -gt 0) {
   } finally {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
   }
+  }
 }
 
 Write-Output "Sobirayu ustanovshik"
@@ -223,7 +229,7 @@ try {
   if ($rel.assets) {
     foreach ($asset in $rel.assets) {
       if ($asset.name -eq "Zwmenu-Setup.exe") { $hasSetup = $true }
-      if ($asset.name -eq "Zwmenu-Patch.zip") { $hasPatch = $true }
+      if ($asset.name -eq "Zwmenu-Delta.zip") { $hasPatch = $true }
       if ($asset.name -eq "Zwmenu.manifest.json") { $hasManifest = $true }
     }
   }
@@ -246,7 +252,7 @@ try {
 
   if ($patchReady -and -not $FullOnly -and -not $hasPatch) {
     Write-Output "Zagruzhayu zaplatku"
-    $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Patch.zip"
+    $upload = "https://uploads.github.com/repos/Z-oobastik-s/Zwmenu/releases/$($rel.id)/assets?name=Zwmenu-Delta.zip"
     $code = & curl.exe --progress-bar -S -o $out -w "%{http_code}" -X POST -H "@$hdr" -H "Content-Type: application/zip" --data-binary "@$patch" $upload
     if ($LASTEXITCODE -ne 0) { throw "Zagruzka zaplatki oborvalas" }
     if ("$code".Trim() -ne "201") { throw "GitHub ne prinyal zaplatku ($code)" }

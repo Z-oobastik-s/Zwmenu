@@ -31,12 +31,14 @@ public sealed class UpdateOffer
 public static class AppUpdate
 {
     public const string AssetName = "Zwmenu-Setup.exe";
-    public const string PatchName = "Zwmenu-Patch.zip";
+    // Новое имя: старые клиенты с белым списком файлов не видят эту заплатку и берут установщик.
+    public const string PatchName = "Zwmenu-Delta.zip";
     public const string ManifestName = "Zwmenu.manifest.json";
     public const string PatchIndexName = "Zwmenu.patch.json";
-    static readonly Version PatchFloor = new(1, 3, 65);
+    static readonly Version PatchFloor = new(1, 3, 74);
     const string LatestUrl = "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/latest";
     const long PatchMaxBytes = 40_000_000;
+    const long PatchMaxUncompressed = 200_000_000;
 
     static readonly HttpClient Http = CreateClient();
     static int _checking;
@@ -373,7 +375,7 @@ public static class AppUpdate
             path = NormalizeEntry(path);
             if (!IsSafeRelPath(path))
                 throw new InvalidDataException("path");
-            if (hash.Length != 64)
+            if (hash.Length != 64 || !IsHex64(hash))
                 throw new InvalidDataException("hash");
             if (size <= 0)
                 throw new InvalidDataException("size");
@@ -384,7 +386,7 @@ public static class AppUpdate
             throw new InvalidDataException("empty");
         if (list.Count > 4000)
             throw new InvalidDataException("many");
-        if (list.Sum(f => f.Size) > PatchMaxBytes)
+        if (list.Sum(f => f.Size) > PatchMaxUncompressed)
             throw new InvalidDataException("huge");
         return list;
     }
@@ -441,16 +443,20 @@ public static class AppUpdate
         text.AppendLine("set /a N=N+1");
         text.AppendLine("ping 127.0.0.1 -n 2 >nul");
         text.AppendLine("tasklist /FI \"IMAGENAME eq Zwmenu.exe\" | find /I \"Zwmenu.exe\" >nul");
-        text.AppendLine("if not errorlevel 1 if %N% lss 40 goto wait");
+        // Пока процесс жив, копировать нельзя. Если так и не закрылся, просто откроем снова.
+        text.AppendLine("if not errorlevel 1 (");
+        text.AppendLine("  if %N% lss 60 goto wait");
+        text.AppendLine("  goto fail");
+        text.AppendLine(")");
         text.Append('\"').Append(robocopy).Append("\" \"").Append(fromDir).Append("\" \"").Append(toDir)
             .AppendLine("\" /E /IS /IT /R:8 /W:1 /NFL /NDL /NJH /NJS /nc /ns /np >nul");
-        text.AppendLine("if errorlevel 8 goto held");
-        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.exe")).AppendLine("\" goto held");
-        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.dll")).AppendLine("\" goto held");
+        text.AppendLine("if errorlevel 8 goto fail");
+        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.exe")).AppendLine("\" goto fail");
+        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.dll")).AppendLine("\" goto fail");
         text.Append("start \"\" \"").Append(exe).AppendLine("\" --updated");
         text.AppendLine("goto done");
-        text.AppendLine(":held");
-        text.AppendLine("if %N% lss 40 goto wait");
+        text.AppendLine(":fail");
+        text.Append("start \"\" \"").Append(exe).AppendLine("\"");
         text.AppendLine(":done");
         text.Append("rd /s /q \"").Append(fromDir).AppendLine("\"");
         string script = text.ToString();
@@ -533,7 +539,20 @@ public static class AppUpdate
         Path.Combine(Path.GetTempPath(), "Zwmenu-Setup-" + version + ".exe");
 
     public static string PatchPath(Version version) =>
-        Path.Combine(Path.GetTempPath(), "Zwmenu-Patch-" + version + ".zip");
+        Path.Combine(Path.GetTempPath(), "Zwmenu-Delta-" + version + ".zip");
+
+    public static bool IsHex64(string text)
+    {
+        if (text.Length != 64)
+            return false;
+        foreach (char c in text)
+        {
+            if (!Uri.IsHexDigit(c))
+                return false;
+        }
+
+        return true;
+    }
 
     static string AssetPath(UpdateOffer offer) =>
         offer.Kind == UpdateKind.Patch ? PatchPath(offer.Version) : SetupPath(offer.Version);
@@ -567,15 +586,17 @@ public static class AppUpdate
         if (!TryParseLatest(json, out var offer) || offer.Version != new Version(9, 9, 9) || offer.Size != 123456789 || offer.Kind != UpdateKind.Setup)
             throw new InvalidOperationException("разбор релиза");
         const string both = """
-            {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Setup.exe","size":123456789},{"name":"Zwmenu-Patch.zip","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Patch.zip","size":2500000}]}
+            {"tag_name":"v9.9.9","assets":[{"name":"Zwmenu-Setup.exe","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Setup.exe","size":123456789},{"name":"Zwmenu-Delta.zip","browser_download_url":"https://github.com/Z-oobastik-s/Zwmenu/releases/download/v9.9.9/Zwmenu-Delta.zip","size":2500000}]}
             """;
         if (!TryParseLatest(both, out var picked) || picked.Kind != UpdateKind.Patch || picked.Size != 2500000)
             throw new InvalidOperationException("заплатка не выбрана");
-        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/Zwmenu-Patch.zip"))
+        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.74/Zwmenu-Delta.zip"))
             throw new InvalidOperationException("адрес заплатки отвергнут");
-        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/Zwmenu.manifest.json"))
+        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.74/Zwmenu.manifest.json"))
             throw new InvalidOperationException("адрес манифеста отвергнут");
-        if (IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/notes.zip"))
+        if (IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.74/Zwmenu-Patch.zip"))
+            throw new InvalidOperationException("старое имя заплатки принято");
+        if (IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.74/notes.zip"))
             throw new InvalidOperationException("чужой архив принят");
         if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"readme.txt","browser_download_url":"https://example.invalid/readme.txt","size":10}]}""", out _))
             throw new InvalidOperationException("релиз без установщика принят");
@@ -592,6 +613,62 @@ public static class AppUpdate
             throw new InvalidOperationException("вложенный путь отклонён");
         if (IsSafeRelPath("../x.dll") || IsSafeRelPath("a/../../b.dll") || IsSafeRelPath("C:/x.dll"))
             throw new InvalidOperationException("опасный путь принят");
+        if (!IsHex64(new string('a', 64)) || IsHex64("zz" + new string('a', 62)) || IsHex64("abc"))
+            throw new InvalidOperationException("проверка sha256");
+
+        SelfCheckPatchRoundTrip();
+    }
+
+    static void SelfCheckPatchRoundTrip()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "zwmenu-patch-self-" + Guid.NewGuid().ToString("N"));
+        string stage = Path.Combine(root, "stage");
+        string zipPath = Path.Combine(root, "pack.zip");
+        Directory.CreateDirectory(stage);
+        try
+        {
+            string nested = Path.Combine(stage, "runtimes", "win");
+            Directory.CreateDirectory(nested);
+            byte[] payload = Encoding.UTF8.GetBytes("zwmenu-delta-selfcheck");
+            string leaf = Path.Combine(nested, "probe.bin");
+            File.WriteAllBytes(leaf, payload);
+            string exe = Path.Combine(stage, "Zwmenu.exe");
+            string dll = Path.Combine(stage, "Zwmenu.dll");
+            File.WriteAllBytes(exe, payload);
+            File.WriteAllBytes(dll, payload);
+
+            var files = new List<PatchFile>
+            {
+                new("Zwmenu.exe", Sha256File(exe), new FileInfo(exe).Length),
+                new("Zwmenu.dll", Sha256File(dll), new FileInfo(dll).Length),
+                new("runtimes/win/probe.bin", Sha256File(leaf), new FileInfo(leaf).Length)
+            };
+            var index = new
+            {
+                version = "9.9.9",
+                files = files.Select(f => new { path = f.Path, sha256 = f.Sha256, size = f.Size }).ToArray()
+            };
+            File.WriteAllText(Path.Combine(stage, PatchIndexName), JsonSerializer.Serialize(index), Encoding.UTF8);
+            if (File.Exists(zipPath))
+                File.Delete(zipPath);
+            ZipFile.CreateFromDirectory(stage, zipPath, CompressionLevel.Optimal, false);
+
+            // LooksRight требует минимум 200 КБ для delta. Дополним zip нулями через повторную упаковку большого файла.
+            // Для selfcheck вызываем разбор индекса напрямую, без LooksRight.
+            var parsed = ReadPatchIndex(zipPath);
+            if (parsed.Count != 3)
+                throw new InvalidOperationException("индекс заплатки");
+            string outDir = Path.Combine(root, "out");
+            Directory.CreateDirectory(outDir);
+            ExtractPatch(zipPath, outDir, parsed);
+            VerifyStage(outDir, parsed);
+            if (!File.Exists(Path.Combine(outDir, "runtimes", "win", "probe.bin")))
+                throw new InvalidOperationException("вложенный файл заплатки");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* проверка уже кончилась */ }
+        }
     }
 
     static async Task DownloadOnce(UpdateOffer offer, string partial, string finalPath, IProgress<(long Got, long Total)> progress, CancellationToken cancel)

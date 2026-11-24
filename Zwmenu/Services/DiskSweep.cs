@@ -44,18 +44,21 @@ public static class DiskSweep
                 throw new InvalidOperationException("чужой файл удалён");
 
             File.WriteAllText(Path.Combine(dir, "Zwmenu-Setup-9.0.0.exe"), "later");
-            File.WriteAllText(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip"), "oldpatch");
-            File.WriteAllText(Path.Combine(dir, "Zwmenu-Patch-1.0.1.zip"), "keeppatch");
+            File.WriteAllText(Path.Combine(dir, "Zwmenu-Delta-1.0.0.zip"), "oldpatch");
+            File.WriteAllText(Path.Combine(dir, "Zwmenu-Delta-1.0.1.zip"), "keeppatch");
+            File.WriteAllText(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip"), "legacy");
             DropOldSetups(dir, keepNewest: false, keep: new Version(1, 0, 1));
             DropOldPatches(dir, keepNewest: false, keep: new Version(1, 0, 1));
             if (File.Exists(Path.Combine(dir, "Zwmenu-Setup-9.0.0.exe")))
                 throw new InvalidOperationException("чужая версия осталась");
             if (!File.Exists(Path.Combine(dir, "Zwmenu-Setup-1.0.1.exe")))
                 throw new InvalidOperationException("нужная версия удалена");
-            if (File.Exists(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip")))
+            if (File.Exists(Path.Combine(dir, "Zwmenu-Delta-1.0.0.zip")))
                 throw new InvalidOperationException("старая заплатка осталась");
-            if (!File.Exists(Path.Combine(dir, "Zwmenu-Patch-1.0.1.zip")))
+            if (!File.Exists(Path.Combine(dir, "Zwmenu-Delta-1.0.1.zip")))
                 throw new InvalidOperationException("нужная заплатка удалена");
+            if (File.Exists(Path.Combine(dir, "Zwmenu-Patch-1.0.0.zip")))
+                throw new InvalidOperationException("старое имя заплатки осталось");
         }
         finally
         {
@@ -129,7 +132,12 @@ public static class DiskSweep
         string[] files;
         try
         {
-            files = Directory.Exists(dir) ? Directory.GetFiles(dir, "Zwmenu-Patch-*") : Array.Empty<string>();
+            if (!Directory.Exists(dir))
+                return;
+            var list = new List<string>();
+            list.AddRange(Directory.GetFiles(dir, "Zwmenu-Delta-*"));
+            list.AddRange(Directory.GetFiles(dir, "Zwmenu-Patch-*"));
+            files = list.ToArray();
         }
         catch
         {
@@ -150,7 +158,15 @@ public static class DiskSweep
 
         foreach (string file in files)
         {
-            if (!TryPatchVersion(Path.GetFileName(file), out var version, out bool partial))
+            string name = Path.GetFileName(file);
+            // Старое имя Zwmenu-Patch всегда убираем: новый формат только Delta.
+            if (name.StartsWith("Zwmenu-Patch-", StringComparison.OrdinalIgnoreCase))
+            {
+                TryDeleteFile(file);
+                continue;
+            }
+
+            if (!TryPatchVersion(name, out var version, out bool partial))
                 continue;
             if (keep != null && version == keep)
                 continue;
@@ -164,8 +180,12 @@ public static class DiskSweep
     {
         version = new Version(0, 0);
         partial = false;
-        const string head = "Zwmenu-Patch-";
-        if (!name.StartsWith(head, StringComparison.OrdinalIgnoreCase))
+        string head = name.StartsWith("Zwmenu-Delta-", StringComparison.OrdinalIgnoreCase)
+            ? "Zwmenu-Delta-"
+            : name.StartsWith("Zwmenu-Patch-", StringComparison.OrdinalIgnoreCase)
+                ? "Zwmenu-Patch-"
+                : "";
+        if (head.Length == 0)
             return false;
         string tail = name[head.Length..];
         if (tail.EndsWith(".zip.part", StringComparison.OrdinalIgnoreCase))

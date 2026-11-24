@@ -184,7 +184,21 @@ public sealed class UpdateWindow : Window
             }
 
             _text.Text = "Ставлю. Откроюсь снова и покажу, что обновление прошло.";
-            AppUpdate.Start(offer);
+            try
+            {
+                AppUpdate.Start(offer);
+            }
+            catch (InvalidDataException)
+            {
+                Hold("Файл обновления повреждён или неполный. Нажми «Поставить» ещё раз, или поставь полный установщик с GitHub.");
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                Hold("Не удалось начать установку. Путь к программе недоступен.");
+                return;
+            }
+
             if (ExitForUpdate != null)
                 ExitForUpdate();
             else
