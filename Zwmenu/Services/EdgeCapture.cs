@@ -604,8 +604,8 @@ sealed class EdgeCapture : IDisposable
             return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
         }
 
-        // Игра прячет курсор или сидит на весь экран. Край тогда не переход на второй ноутбук.
-        if (CursorHidden() || GameFocus.IsPlaying())
+        // Пока игра прячет курсор, край не переход. В меню и в поле ввода курсор виден, уход на второй ноутбук снова можно.
+        if (CursorHidden())
         {
             _pinned = false;
             return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
