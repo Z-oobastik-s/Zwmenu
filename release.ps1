@@ -83,11 +83,14 @@ function Gh([string]$method, [string]$url, [string]$bodyFile) {
 function Find-PreviousManifest {
   $localPrev = Join-Path $root "dist\last.manifest.json"
   if (Test-Path -LiteralPath $localPrev) {
-    Write-Output "Beru lokalnyy last.manifest.json"
-    return [IO.File]::ReadAllText($localPrev, [Text.Encoding]::UTF8)
+    $text = [IO.File]::ReadAllText($localPrev, [Text.Encoding]::UTF8).Trim()
+    if ($text.StartsWith("{") -and $text.Contains('"files"')) {
+      Write-Host "Beru lokalnyy last.manifest.json"
+      return $text
+    }
   }
 
-  Write-Output "Ishchu predydushchiy manifest na GitHub"
+  Write-Host "Ishchu predydushchiy manifest na GitHub"
   $code = Gh "GET" "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases?per_page=20" ""
   if ($code -ne "200") { return $null }
   $releases = Get-Content -LiteralPath $out -Raw | ConvertFrom-Json
@@ -96,13 +99,13 @@ function Find-PreviousManifest {
     if (-not $rel.assets) { continue }
     $asset = $rel.assets | Where-Object { $_.name -eq "Zwmenu.manifest.json" } | Select-Object -First 1
     if (-not $asset) { continue }
-    Write-Output ("Nayden manifest " + $rel.tag_name)
+    Write-Host ("Nayden manifest " + $rel.tag_name)
     $tmp = Join-Path $env:TEMP ("zwmenu-prev-manifest-" + [guid]::NewGuid().ToString("N") + ".json")
     & curl.exe -sS -L -o $tmp -H "@$hdr" $asset.browser_download_url
     if ($LASTEXITCODE -ne 0) { continue }
-    $text = [IO.File]::ReadAllText($tmp, [Text.Encoding]::UTF8)
+    $text = [IO.File]::ReadAllText($tmp, [Text.Encoding]::UTF8).Trim()
     Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-    return $text
+    if ($text.StartsWith("{") -and $text.Contains('"files"')) { return $text }
   }
   return $null
 }
@@ -112,8 +115,8 @@ $patchReady = $false
 $prevText = Find-PreviousManifest
 $changed = New-Object System.Collections.Generic.List[object]
 $prevMap = @{}
-if ($prevText) {
-  $prev = $prevText | ConvertFrom-Json
+if ($null -ne $prevText -and "$prevText".Trim().StartsWith("{")) {
+  $prev = "$prevText" | ConvertFrom-Json
   foreach ($f in $prev.files) {
     $prevMap[$f.path] = $f.sha256
   }
@@ -124,7 +127,7 @@ if ($prevText) {
     }
   }
 } else {
-  Write-Output "Predydushchego manifesta net: zaplatku ne sobirayu, tolko ustanovshik"
+  Write-Host "Predydushchego manifesta net: zaplatku ne sobirayu, tolko ustanovshik"
 }
 
 if (-not $FullOnly -and $changed.Count -gt 0) {
