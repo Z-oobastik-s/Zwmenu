@@ -42,7 +42,6 @@ sealed class EdgeCapture : IDisposable
     private const uint XUp = 0x0100;
     private const uint Wheel = 0x0800;
     private const int CursorShowing = 0x0001;
-    private const uint SpiGetMouseSpeed = 0x0070;
     private const uint KeyUp = 0x0002;
     private const uint KeyExtended = 0x0001;
 
@@ -62,8 +61,6 @@ sealed class EdgeCapture : IDisposable
     private int _trackX;
     private int _trackY;
     private long _grabbedUntil;
-    private int _pointerSpeed = 10;
-    private long _speedChecked;
     private bool _escHeld;
     private int _escHits;
     private long _escStarted;
@@ -233,27 +230,40 @@ sealed class EdgeCapture : IDisposable
         if (!_hosting || (dx == 0 && dy == 0))
             return;
 
-        // Всегда относительный ввод: SetCursorPos на каждый пакет давал дёрганье и лишнюю задержку.
-        // Игра и стол читают сдвиг одинаково; скорость Windows учитываем в Unscale.
+        // Скорость мыши Windows не меняем и на столе её не «компенсируем».
+        // Стол: только SetCursorPos по пикселям источника. Относительный SendInput
+        // Windows ещё раз разгоняет, из за этого курсор казался быстрее.
+        // Игра (курсор спрятан): относительный сдвиг, иначе камера не едет.
         long now = Environment.TickCount64;
         bool hidden = CursorHidden();
         if (hidden)
             _grabbedUntil = now + 200;
         if (hidden || now < _grabbedUntil)
+        {
             _track = false;
-
-        SendRelative(dx, dy);
-        if (_track && GetCursorPos(out var pt))
-        {
-            _trackX = pt.X;
-            _trackY = pt.Y;
+            SendRelative(dx, dy);
+            return;
         }
-        else if (!_track && !hidden && GetCursorPos(out var cur))
+
+        if (!_track && GetCursorPos(out var current))
         {
-            _trackX = cur.X;
-            _trackY = cur.Y;
+            _trackX = current.X;
+            _trackY = current.Y;
             _track = true;
         }
+
+        if (!_track)
+        {
+            SendRelative(dx, dy);
+            return;
+        }
+
+        var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+        int x = Math.Clamp(_trackX + dx, bounds.Left, Math.Max(bounds.Left, bounds.Right - 1));
+        int y = Math.Clamp(_trackY + dy, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - 1));
+        _trackX = x;
+        _trackY = y;
+        PlaceExact(x, y);
     }
 
     public void ApplyButton(byte id, bool down)
@@ -949,43 +959,14 @@ sealed class EdgeCapture : IDisposable
     }
 
     /// <summary>
-    /// Сдвиг для игры. Делим на скорость указателя Windows: источник уже отдал пиксели курсора,
-    /// а сырой ввод игры не должен проходить эту скорость второй раз. Ползунок Windows не трогаем.
+    /// Только для игры: сырой относительный сдвиг.
+    /// Ползунок скорости Windows не читаем и не меняем. Пиксели источника уходят как есть.
     /// </summary>
     private void SendRelative(int dx, int dy)
     {
-        RefreshPointerSpeed();
-        int sx = Unscale(dx);
-        int sy = Unscale(dy);
-        if (sx == 0 && sy == 0)
+        if (dx == 0 && dy == 0)
             return;
-        SendMouse(sx, sy, 0, MouseMove | MouseMoveNoCoalesce, EdgeExtra);
-    }
-
-    private void RefreshPointerSpeed()
-    {
-        long now = Environment.TickCount64;
-        if (_speedChecked != 0 && now - _speedChecked < 2000)
-            return;
-        _speedChecked = now;
-        int speed = 10;
-        if (SystemParametersInfo(SpiGetMouseSpeed, 0, ref speed, 0) && speed is >= 1 and <= 20)
-            _pointerSpeed = speed;
-    }
-
-    private int Unscale(int delta)
-    {
-        int speed = _pointerSpeed;
-        if (speed is < 1 or > 20)
-            speed = 10;
-        if (speed == 10 || delta == 0)
-            return delta;
-        int result = (int)Math.DivRem((long)delta * 10, speed, out long rem);
-        if (rem != 0 && Math.Abs(rem) * 2 >= speed)
-            result += Math.Sign(delta);
-        if (result == 0)
-            result = Math.Sign(delta);
-        return result;
+        SendMouse(dx, dy, 0, MouseMove | MouseMoveNoCoalesce, EdgeExtra);
     }
 
     private static bool CursorHidden()
@@ -1074,9 +1055,6 @@ sealed class EdgeCapture : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorInfo(ref CursorInfo info);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SystemParametersInfo(uint action, uint param, ref int value, uint winIni);
 
     [DllImport("winmm.dll")]
     private static extern uint timeBeginPeriod(uint period);
