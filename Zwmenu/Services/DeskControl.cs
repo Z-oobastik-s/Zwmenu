@@ -1,4 +1,4 @@
-using System.Management;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 
@@ -168,41 +168,53 @@ public static class DeskControl
 
     public static IReadOnlyList<ScreenLamp> ListScreens()
     {
-        var list = new List<ScreenLamp>();
         try
         {
-            using var search = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightness");
-            int index = 0;
-            foreach (ManagementBaseObject item in search.Get())
-            {
-                using (item)
-                {
-                    byte level = 50;
-                    try { level = Convert.ToByte(item["CurrentBrightness"]); } catch { /* ignore */ }
-                    string id = "wmi:" + index;
-                    string name = index == 0 ? "Встроенный экран" : "Экран " + (index + 1);
-                    list.Add(new ScreenLamp { Id = id, Name = name, Level = level, CanSet = true });
-                    index++;
-                }
-            }
+            var wmi = ListScreensWmi();
+            if (wmi.Count > 0)
+                return wmi;
         }
         catch
         {
-            // WMI яркости нет на части мониторов
+            // System.Management мог не попасть в установку, или WMI закрыт
         }
 
-        if (list.Count == 0)
+        var list = new List<ScreenLamp>();
+        foreach (var screen in System.Windows.Forms.Screen.AllScreens)
         {
-            foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+            string name = screen.Primary ? "Главный монитор" : "Монитор " + screen.DeviceName;
+            list.Add(new ScreenLamp
             {
-                string name = screen.Primary ? "Главный монитор" : "Монитор " + screen.DeviceName;
+                Id = "disp:" + screen.DeviceName,
+                Name = name,
+                Level = 50,
+                CanSet = false
+            });
+        }
+
+        return list;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static List<ScreenLamp> ListScreensWmi()
+    {
+        var list = new List<ScreenLamp>();
+        using var search = new System.Management.ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightness");
+        int index = 0;
+        foreach (System.Management.ManagementBaseObject item in search.Get())
+        {
+            using (item)
+            {
+                byte level = 50;
+                try { level = Convert.ToByte(item["CurrentBrightness"]); } catch { /* ignore */ }
                 list.Add(new ScreenLamp
                 {
-                    Id = "disp:" + screen.DeviceName,
-                    Name = name,
-                    Level = 50,
-                    CanSet = false
+                    Id = "wmi:" + index,
+                    Name = index == 0 ? "Встроенный экран" : "Экран " + (index + 1),
+                    Level = level,
+                    CanSet = true
                 });
+                index++;
             }
         }
 
@@ -215,31 +227,34 @@ public static class DeskControl
         if (id.StartsWith("wmi:", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(id.AsSpan(4), out int index))
         {
-            try
-            {
-                using var search = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods");
-                int i = 0;
-                foreach (ManagementObject item in search.Get())
-                {
-                    using (item)
-                    {
-                        if (i == index)
-                        {
-                            item.InvokeMethod("WmiSetBrightness", new object[] { uint.MaxValue, (byte)level });
-                            return;
-                        }
-
-                        i++;
-                    }
-                }
-            }
+            try { SetBrightnessWmi(index, level); return; }
             catch
             {
-                // яркость недоступна
+                // System.Management нет или монитор не умеет
             }
         }
 
         TryPhysicalBrightness(level);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void SetBrightnessWmi(int index, int level)
+    {
+        using var search = new System.Management.ManagementObjectSearcher(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods");
+        int i = 0;
+        foreach (System.Management.ManagementObject item in search.Get())
+        {
+            using (item)
+            {
+                if (i == index)
+                {
+                    item.InvokeMethod("WmiSetBrightness", new object[] { uint.MaxValue, (byte)level });
+                    return;
+                }
+
+                i++;
+            }
+        }
     }
 
     public static void SetAllBrightness(int level)

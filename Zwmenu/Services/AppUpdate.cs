@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Zwmenu.Overlay;
@@ -23,14 +24,19 @@ public sealed class UpdateOffer
     public required UpdateKind Kind { get; init; }
 }
 
-/// <summary>Смотрит последний релиз на GitHub и скачивает установщик.</summary>
+/// <summary>
+/// Обновление с GitHub. Заплатка: любой набор файлов по манифесту с sha256.
+/// Список файлов не зашит: что изменилось в релизе, то и приедет.
+/// </summary>
 public static class AppUpdate
 {
     public const string AssetName = "Zwmenu-Setup.exe";
     public const string PatchName = "Zwmenu-Patch.zip";
+    public const string ManifestName = "Zwmenu.manifest.json";
+    public const string PatchIndexName = "Zwmenu.patch.json";
     static readonly Version PatchFloor = new(1, 3, 65);
     const string LatestUrl = "https://api.github.com/repos/Z-oobastik-s/Zwmenu/releases/latest";
-    static readonly string[] PatchFiles = { "Zwmenu.exe", "Zwmenu.dll", "Zwmenu.deps.json", "Zwmenu.runtimeconfig.json", "Zwmenu.Thumbs.dll" };
+    const long PatchMaxBytes = 40_000_000;
 
     static readonly HttpClient Http = CreateClient();
     static int _checking;
@@ -152,15 +158,16 @@ public static class AppUpdate
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
-        if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
             return false;
-        if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
             return false;
-        var path = uri.AbsolutePath;
+        string path = uri.AbsolutePath;
         if (!path.StartsWith("/Z-oobastik-s/Zwmenu/releases/download/", StringComparison.OrdinalIgnoreCase))
             return false;
         return path.EndsWith("/" + AssetName, StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith("/" + PatchName, StringComparison.OrdinalIgnoreCase);
+            || path.EndsWith("/" + PatchName, StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/" + ManifestName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool ShouldOffer(Version latest, Version current, Version? skipped, bool manual)
@@ -230,7 +237,7 @@ public static class AppUpdate
                     setup = found;
             }
 
-            if (patch != null && Current >= PatchFloor && patch.Size > 0 && patch.Size < 40_000_000)
+            if (patch != null && Current >= PatchFloor && patch.Size > 0 && patch.Size < PatchMaxBytes)
             {
                 offer = patch;
                 return true;
@@ -326,30 +333,107 @@ public static class AppUpdate
             install = Path.GetDirectoryName(typeof(AppUpdate).Assembly.Location);
         if (string.IsNullOrEmpty(install) || install.Contains('"') || zipPath.Contains('"'))
             throw new InvalidOperationException("path");
+
         var stage = Path.Combine(Path.GetTempPath(), "zwmenu-patch-" + version);
         if (Directory.Exists(stage))
             Directory.Delete(stage, true);
         Directory.CreateDirectory(stage);
-        using (var zip = ZipFile.OpenRead(zipPath))
-        {
-            foreach (var entry in zip.Entries)
-            {
-                string name = entry.FullName.Replace('\\', '/').Trim('/');
-                if (name.Length == 0 || entry.Length == 0)
-                    continue;
-                if (name.Contains('/') || name.Contains("..", StringComparison.Ordinal))
-                    throw new InvalidDataException("zip");
-                if (Array.IndexOf(PatchFiles, name) < 0)
-                    throw new InvalidDataException("zip");
-            }
-        }
 
-        ZipFile.ExtractToDirectory(zipPath, stage, true);
+        var files = ReadPatchIndex(zipPath);
+        ExtractPatch(zipPath, stage, files);
+        VerifyStage(stage, files);
         if (!File.Exists(Path.Combine(stage, "Zwmenu.exe")) || !File.Exists(Path.Combine(stage, "Zwmenu.dll")))
             throw new InvalidDataException("zip");
+
+        WriteApplyScript(stage, install);
+    }
+
+    static List<PatchFile> ReadPatchIndex(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var index = zip.GetEntry(PatchIndexName)
+            ?? zip.Entries.FirstOrDefault(e =>
+                string.Equals(e.FullName.Replace('\\', '/').Trim('/'), PatchIndexName, StringComparison.OrdinalIgnoreCase));
+        if (index == null)
+            throw new InvalidDataException("index");
+
+        using var stream = index.Open();
+        using var doc = JsonDocument.Parse(stream);
+        if (!doc.RootElement.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("index");
+
+        var list = new List<PatchFile>();
+        foreach (var item in files.EnumerateArray())
+        {
+            string path = item.TryGetProperty("path", out var pathNode) ? pathNode.GetString() ?? "" : "";
+            string hash = item.TryGetProperty("sha256", out var hashNode) ? hashNode.GetString() ?? "" : "";
+            long size = 0;
+            if (item.TryGetProperty("size", out var sizeNode) && sizeNode.TryGetInt64(out var parsed))
+                size = parsed;
+            path = NormalizeEntry(path);
+            if (!IsSafeRelPath(path))
+                throw new InvalidDataException("path");
+            if (hash.Length != 64)
+                throw new InvalidDataException("hash");
+            if (size <= 0)
+                throw new InvalidDataException("size");
+            list.Add(new PatchFile(path, hash.ToLowerInvariant(), size));
+        }
+
+        if (list.Count == 0)
+            throw new InvalidDataException("empty");
+        if (list.Count > 4000)
+            throw new InvalidDataException("many");
+        if (list.Sum(f => f.Size) > PatchMaxBytes)
+            throw new InvalidDataException("huge");
+        return list;
+    }
+
+    static void ExtractPatch(string zipPath, string stage, List<PatchFile> files)
+    {
+        var want = new HashSet<string>(files.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
+        using var zip = ZipFile.OpenRead(zipPath);
+        foreach (var entry in zip.Entries)
+        {
+            string name = NormalizeEntry(entry.FullName);
+            if (name.Length == 0 || entry.Length == 0)
+                continue;
+            if (string.Equals(name, PatchIndexName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!IsSafeRelPath(name))
+                throw new InvalidDataException("zip");
+            if (!want.Contains(name))
+                throw new InvalidDataException("zip");
+
+            string dest = Path.Combine(stage, name.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            entry.ExtractToFile(dest, true);
+        }
+    }
+
+    static void VerifyStage(string stage, List<PatchFile> files)
+    {
+        foreach (var file in files)
+        {
+            string path = Path.Combine(stage, file.Path.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+                throw new InvalidDataException("missing");
+            var info = new FileInfo(path);
+            if (info.Length != file.Size)
+                throw new InvalidDataException("size");
+            string hash = Sha256File(path);
+            if (!string.Equals(hash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("hash");
+        }
+    }
+
+    static void WriteApplyScript(string stage, string install)
+    {
         var bat = Path.Combine(Path.GetTempPath(), "zwmenu-patch-apply.bat");
         string exe = BatPath(Path.Combine(install, "Zwmenu.exe"));
         string fromDir = BatPath(stage);
+        string toDir = BatPath(install);
+        string robocopy = Path.Combine(Environment.SystemDirectory, "robocopy.exe");
         var text = new StringBuilder();
         text.AppendLine("@echo off");
         text.AppendLine("set N=0");
@@ -358,16 +442,11 @@ public static class AppUpdate
         text.AppendLine("ping 127.0.0.1 -n 2 >nul");
         text.AppendLine("tasklist /FI \"IMAGENAME eq Zwmenu.exe\" | find /I \"Zwmenu.exe\" >nul");
         text.AppendLine("if not errorlevel 1 if %N% lss 40 goto wait");
-        string toDir = BatPath(install);
-        foreach (var name in PatchFiles)
-        {
-            if (!File.Exists(Path.Combine(stage, name)))
-                continue;
-            text.Append("copy /Y \"").Append(Path.Combine(fromDir, name)).Append("\" \"").Append(Path.Combine(toDir, name)).AppendLine("\" >nul");
-            if (name is "Zwmenu.exe" or "Zwmenu.dll")
-                text.AppendLine("if errorlevel 1 goto held");
-        }
-
+        text.Append('\"').Append(robocopy).Append("\" \"").Append(fromDir).Append("\" \"").Append(toDir)
+            .AppendLine("\" /E /IS /IT /R:8 /W:1 /NFL /NDL /NJH /NJS /nc /ns /np >nul");
+        text.AppendLine("if errorlevel 8 goto held");
+        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.exe")).AppendLine("\" goto held");
+        text.Append("if not exist \"").Append(Path.Combine(toDir, "Zwmenu.dll")).AppendLine("\" goto held");
         text.Append("start \"\" \"").Append(exe).AppendLine("\" --updated");
         text.AppendLine("goto done");
         text.AppendLine(":held");
@@ -390,6 +469,37 @@ public static class AppUpdate
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         });
+    }
+
+    public static string NormalizeEntry(string path)
+    {
+        path = (path ?? "").Replace('\\', '/').Trim('/');
+        while (path.Contains("//", StringComparison.Ordinal))
+            path = path.Replace("//", "/", StringComparison.Ordinal);
+        return path;
+    }
+
+    public static bool IsSafeRelPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        if (path.StartsWith('/') || path.Contains(':') || path.Contains('\0'))
+            return false;
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            if (part == "." || part == "..")
+                return false;
+        }
+
+        return parts.Length > 0;
+    }
+
+    public static string Sha256File(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var hash = SHA256.HashData(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     static string BatPath(string path)
@@ -463,6 +573,8 @@ public static class AppUpdate
             throw new InvalidOperationException("заплатка не выбрана");
         if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/Zwmenu-Patch.zip"))
             throw new InvalidOperationException("адрес заплатки отвергнут");
+        if (!IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/Zwmenu.manifest.json"))
+            throw new InvalidOperationException("адрес манифеста отвергнут");
         if (IsTrusted("https://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.66/notes.zip"))
             throw new InvalidOperationException("чужой архив принят");
         if (TryParseLatest("""{"tag_name":"v9.9.9","assets":[{"name":"readme.txt","browser_download_url":"https://example.invalid/readme.txt","size":10}]}""", out _))
@@ -473,6 +585,13 @@ public static class AppUpdate
             throw new InvalidOperationException("свой адрес отвергнут");
         if (IsTrusted("http://github.com/Z-oobastik-s/Zwmenu/releases/download/v1.3.37/Zwmenu-Setup.exe"))
             throw new InvalidOperationException("http принят");
+
+        if (!IsSafeRelPath("System.Management.dll"))
+            throw new InvalidOperationException("корень отклонён");
+        if (!IsSafeRelPath("runtimes/win/lib/net8.0/x.dll"))
+            throw new InvalidOperationException("вложенный путь отклонён");
+        if (IsSafeRelPath("../x.dll") || IsSafeRelPath("a/../../b.dll") || IsSafeRelPath("C:/x.dll"))
+            throw new InvalidOperationException("опасный путь принят");
     }
 
     static async Task DownloadOnce(UpdateOffer offer, string partial, string finalPath, IProgress<(long Got, long Total)> progress, CancellationToken cancel)
@@ -629,15 +748,21 @@ public static class AppUpdate
     static Version Normalize(Version version) =>
         new(version.Major, version.Minor, Math.Max(version.Build, 0));
 
-    static Version Newer(Version left, Version right) => left >= right ? left : right;
+    static Version Newer(Version a, Version b) => a >= b ? a : b;
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     static extern int GetShortPathName(string path, StringBuilder buffer, int size);
 
     static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(20) };
+        var client = new HttpClient(new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.All
+        });
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Zwmenu");
+        client.Timeout = TimeSpan.FromMinutes(30);
         return client;
     }
+
+    readonly record struct PatchFile(string Path, string Sha256, long Size);
 }
