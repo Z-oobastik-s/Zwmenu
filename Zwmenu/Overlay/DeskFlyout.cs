@@ -96,7 +96,7 @@ static class DeskFlyout
             }
         }
 
-        root.Children.Add(TickRow(
+        var dualTick = TickRow(
             "Громкость сразу на оба",
             dualVol,
             on =>
@@ -109,7 +109,8 @@ static class DeskFlyout
                     : "Ползунок крутит только этот компьютер.");
             },
             tip,
-            "Пока включено, ползунок и кнопки звука меняют оба компьютера. Нужна связь."));
+            "Пока включено, ползунок и кнопки звука меняют оба компьютера. Нужна связь.");
+        root.Children.Add(dualTick);
 
         float vol = DeskControl.GetMasterVolume();
         bool mute = DeskControl.GetMasterMute();
@@ -140,6 +141,7 @@ static class DeskFlyout
             Cell("Тишина оба", () =>
             {
                 dualVol = true;
+                dualTick.IsChecked = true;
                 tip(DeskControl.SetMasterBoth(DeskControl.GetMasterVolume(), mute: true));
                 volLabel.Text = "Тишина";
             }, tip, "Выключает звук здесь и на втором. Честно пишет, ушло ли.")));

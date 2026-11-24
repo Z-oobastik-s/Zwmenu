@@ -237,12 +237,12 @@ sealed class EdgeCapture : IDisposable
         // Стол (курсор виден): только PlaceExact/SetCursorPos, пиксель в пиксель.
         // Относительный SendInput на столе запрещён: Windows снова разгоняет курсор.
         // Игра (курсор спрятан): сырой SendRelative без масштаба под скорость Windows.
+        // _grabbedUntil только для СКМ/кнопок, НЕ для выбора SetCursorPos vs SendRelative.
         long now = Environment.TickCount64;
         bool hidden = CursorHidden();
         if (hidden)
-            _grabbedUntil = now + 200;
-        if (hidden || now < _grabbedUntil)
         {
+            _grabbedUntil = now + 200;
             _track = false;
             SendRelative(dx, dy);
             return;
@@ -257,8 +257,12 @@ sealed class EdgeCapture : IDisposable
 
         if (!_track)
         {
-            SendRelative(dx, dy);
-            return;
+            // Курсор виден, точки ещё нет: ставим от текущей позиции, без относительного ввода.
+            if (!GetCursorPos(out var cur))
+                return;
+            _trackX = cur.X;
+            _trackY = cur.Y;
+            _track = true;
         }
 
         var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;

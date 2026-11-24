@@ -174,6 +174,11 @@ public partial class App: Application
         };
         if (e.Args.Any(a => string.Equals(a, "--updated", StringComparison.OrdinalIgnoreCase)))
             UpdateDoneWindow.ShowNow();
+        if (e.Args.Any(a => string.Equals(a, "--update-failed", StringComparison.OrdinalIgnoreCase)))
+        {
+            Dispatcher.BeginInvoke(() =>
+                UpdateWindow.ShowNote("Обновление не поставилось. Файлы не скопировались. Попробуй снова или поставь полный установщик с GitHub."));
+        }
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
         updateTimer.Tick += (_, _) =>
         {

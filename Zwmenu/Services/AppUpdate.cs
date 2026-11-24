@@ -456,7 +456,7 @@ public static class AppUpdate
         text.Append("start \"\" \"").Append(exe).AppendLine("\" --updated");
         text.AppendLine("goto done");
         text.AppendLine(":fail");
-        text.Append("start \"\" \"").Append(exe).AppendLine("\"");
+        text.Append("start \"\" \"").Append(exe).AppendLine("\" --update-failed");
         text.AppendLine(":done");
         text.Append("rd /s /q \"").Append(fromDir).AppendLine("\"");
         string script = text.ToString();

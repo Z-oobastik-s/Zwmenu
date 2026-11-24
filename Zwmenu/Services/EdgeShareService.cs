@@ -613,6 +613,7 @@ public sealed class EdgeShareService : IDisposable
             while (_outgoing.TryDequeue(out _)) { }
             while (_bulk.TryDequeue(out _)) { }
             _bulkQueued = 0;
+            Interlocked.Exchange(ref _movePacked, 0);
             OutgoingCode = null;
             Status = "Связано" + (string.IsNullOrEmpty(_settings.PeerName) ? "" : " с " + _settings.PeerName);
             Hear();
