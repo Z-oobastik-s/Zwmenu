@@ -13,11 +13,13 @@ public sealed class TrayIconService : IDisposable
     readonly Action _settings;
     readonly Action _exit;
     long _seen;
+    long _hoverStart;
     long _leftAt;
     int _anchorX;
     int _anchorY;
     int _clipPhase;
     bool _leftPending;
+    bool _hovering;
     bool _tipHeld;
     bool _disposed;
     static TrayIconService? _live;
@@ -37,7 +39,7 @@ public sealed class TrayIconService : IDisposable
         TrayMenuWindow.ExitRequested += _exit;
 
         var dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
-        _watch = new DispatcherTimer(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background, Watch, dispatcher);
+        _watch = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, Watch, dispatcher);
         _watch.Stop();
 
         _icon = new NotifyIcon
@@ -53,6 +55,7 @@ public sealed class TrayIconService : IDisposable
             if (e.Button == MouseButtons.Right)
             {
                 _leftPending = false;
+                _hovering = false;
                 _seen = Environment.TickCount64 - 10_000;
                 GuideWindow.CloseGuide();
                 TrayMenuWindow.ShowAt(_anchorX, _anchorY, _clipPhase);
@@ -72,6 +75,7 @@ public sealed class TrayIconService : IDisposable
             if (e.Button != MouseButtons.Left)
                 return;
             _leftPending = false;
+            _hovering = false;
             GuideWindow.CloseGuide();
             TrayMenuWindow.CloseMenu();
             ShowRequested?.Invoke(this, EventArgs.Empty);
@@ -132,23 +136,35 @@ public sealed class TrayIconService : IDisposable
         if (TrayMenuWindow.IsOpen)
         {
             _leftPending = false;
+            _hovering = false;
             GuideWindow.CloseGuide();
             return;
         }
 
         long now = Environment.TickCount64;
+
+        // MouseMove у значка идёт только пока курсор на нём. Пауза дольше 160 мс: уже ушёл на соседнюю иконку.
+        if (_hovering && now - _seen > 160)
+            _hovering = false;
+
         if (_leftPending && now - _leftAt >= 260)
         {
             _leftPending = false;
+            if (_hovering)
+                OpenGuide();
+        }
+        else if (_hovering
+                 && !_leftPending
+                 && !GuideWindow.IsShown
+                 && now - _hoverStart >= 520)
+        {
             OpenGuide();
         }
-        else if (!_leftPending && !GuideWindow.IsShown && NearAnchor() && now - _seen is >= 450 and <= 900)
-            OpenGuide();
 
-        if (GuideWindow.IsShown && !NearAnchor() && !GuideWindow.PointerInside())
+        if (GuideWindow.IsShown && !_hovering && !GuideWindow.PointerInside())
             GuideWindow.CloseGuide();
 
-        if (!GuideWindow.IsShown && !TrayMenuWindow.IsOpen && !_leftPending && !NearAnchor())
+        if (!GuideWindow.IsShown && !TrayMenuWindow.IsOpen && !_leftPending && !_hovering)
         {
             _watch.Stop();
             ReleaseTip();
@@ -160,7 +176,11 @@ public sealed class TrayIconService : IDisposable
         var point = Cursor.Position;
         _anchorX = point.X;
         _anchorY = point.Y;
-        _seen = Environment.TickCount64;
+        long now = Environment.TickCount64;
+        if (!_hovering || now - _seen > 400)
+            _hoverStart = now;
+        _hovering = true;
+        _seen = now;
         HoldTip();
         if (!_watch.IsEnabled)
             _watch.Start();
@@ -176,14 +196,6 @@ public sealed class TrayIconService : IDisposable
         }
 
         GuideWindow.ShowNear(_anchorX, _anchorY);
-    }
-
-    bool NearAnchor()
-    {
-        if (_anchorX == 0 && _anchorY == 0)
-            return false;
-        var point = Cursor.Position;
-        return Math.Abs(point.X - _anchorX) <= 64 && Math.Abs(point.Y - _anchorY) <= 48;
     }
 
     static System.Drawing.Icon LoadAppIcon()

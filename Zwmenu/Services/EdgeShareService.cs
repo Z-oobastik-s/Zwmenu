@@ -142,6 +142,7 @@ public sealed class EdgeShareService : IDisposable
         _capture.OnEdgeAsleep = TellAsleep;
         Load();
         _capture.PeerOnRight = _settings.PeerOnRight;
+        _capture.AllowCross = _settings.MouseCross;
     }
 
     public event Action? Changed;
@@ -172,6 +173,17 @@ public sealed class EdgeShareService : IDisposable
     }
     public bool PeerOnRight => _settings.PeerOnRight;
     public bool IsArmed => _settings.Armed;
+    public bool MouseCross
+    {
+        get => _settings.MouseCross;
+        set
+        {
+            _settings.MouseCross = value;
+            _capture.AllowCross = value;
+            Save();
+            Raise();
+        }
+    }
     public string MachineName { get; } = Environment.MachineName;
     public string Status { get; private set; } = "Выключено";
     public string? OutgoingCode { get; private set; }
@@ -1472,6 +1484,7 @@ public sealed class EdgeShareService : IDisposable
         public string? PeerHost { get; set; }
         public int PeerPort { get; set; } = TcpPort;
         public bool PeerOnRight { get; set; } = true;
+        public bool MouseCross { get; set; } = true;
 
         [JsonIgnore]
         public byte[]? TokenBytes

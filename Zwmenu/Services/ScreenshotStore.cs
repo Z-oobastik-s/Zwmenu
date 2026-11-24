@@ -36,6 +36,8 @@ public sealed class ScreenshotSettings
     /// <summary>Сектор «Мастерская» уже предложен. Если его убрали, обратно не вставляем.</summary>
     public bool WorkshopWheelSeeded { get; set; }
 
+    public bool DeskWheelSeeded { get; set; }
+
     /// <summary>Мастер: применять цепочку эффектов (иначе только усиление/монитор).</summary>
     public bool VoiceRecEnhance { get; set; } = true;
 

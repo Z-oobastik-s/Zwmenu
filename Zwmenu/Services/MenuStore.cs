@@ -183,6 +183,7 @@ public static class MenuStore
         EnsureDesktopIcons(list);
         EnsureShelf(list);
         EnsureWorkshop(list);
+        EnsureDesk(list);
         StripMistakenQuickLaunch(list);
 
         string? warning = raw.Count > MaxItems
@@ -637,6 +638,56 @@ public static class MenuStore
         }
 
         return null;
+    }
+
+    private static void EnsureDesk(List<MenuAction> list)
+    {
+        try
+        {
+            if (FindDesk(list) != null)
+            {
+                MarkDeskSeeded();
+                return;
+            }
+
+            var settings = ScreenshotStore.Current;
+            if (settings.DeskWheelSeeded || list.Count >= MaxItems)
+                return;
+
+            list.Add(MenuAction.MakeDeskItem(-1));
+            Renumber(list);
+            Save(list, ensureIcons: false);
+            MarkDeskSeeded();
+        }
+        catch
+        {
+            // Следующий запуск попробует снова.
+        }
+    }
+
+    private static MenuAction? FindDesk(List<MenuAction> list)
+    {
+        foreach (var item in list)
+        {
+            if (item.IsDeskPanel)
+                return item;
+            foreach (var child in item.Children)
+            {
+                if (child.IsDeskPanel)
+                    return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static void MarkDeskSeeded()
+    {
+        var settings = ScreenshotStore.Current;
+        if (settings.DeskWheelSeeded)
+            return;
+        settings.DeskWheelSeeded = true;
+        ScreenshotStore.Save(settings);
     }
 
     private static void MarkWorkshopSeeded()

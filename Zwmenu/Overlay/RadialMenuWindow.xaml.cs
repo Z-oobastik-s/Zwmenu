@@ -26,6 +26,8 @@ public partial class RadialMenuWindow: Window
     private string? _peekPath;
     private readonly List<string> _peekStack = new();
     private System.Windows.Threading.DispatcherTimer? _hideFlyoutTimer;
+    private System.Windows.Threading.DispatcherTimer? _hintTimer;
+    private MenuAction? _hintAction;
     private System.Windows.Threading.DispatcherTimer? _peekDebounce;
     private string? _pendingPeekPath;
     private bool _pendingPeekReset;
@@ -638,7 +640,7 @@ public partial class RadialMenuWindow: Window
                     return;
                 }
 
-                if (action.Children.Count > 0)
+                if (action.IsDeskPanel || action.Children.Count > 0)
                     ShowFlyout(btn, action);
                 return;
             }
@@ -654,10 +656,12 @@ public partial class RadialMenuWindow: Window
                 AnimateIconHover(btn, on: true);
             if (isFlyout)
                 CancelHideFlyout();
-            else if (action.IsProcessGroup || action.Children.Count > 0)
+            else if (action.IsDeskPanel || action.IsProcessGroup || action.Children.Count > 0)
                 ShowFlyout(btn, action);
             else
                 ClearFlyout();
+            if (!isFlyout)
+                ArmHint(action);
         };
         btn.MouseLeave += (_, _) =>
         {
@@ -665,8 +669,9 @@ public partial class RadialMenuWindow: Window
                 ApplyFill(btn, hover: false);
             else
                 AnimateIconHover(btn, on: false);
-            if (isFlyout || action.IsProcessGroup || action.Children.Count > 0 || action.Kind == ActionKind.Group)
+            if (isFlyout || action.IsDeskPanel || action.IsProcessGroup || action.Children.Count > 0 || action.Kind == ActionKind.Group)
                 ScheduleHideFlyout();
+            CancelHint();
         };
 
         return btn;
@@ -824,6 +829,12 @@ public partial class RadialMenuWindow: Window
         if (action.IsProcessGroup)
         {
             ShowProcessFlyout(parent, action);
+            return;
+        }
+
+        if (action.IsDeskPanel)
+        {
+            ShowDeskFlyout(parent, action);
             return;
         }
 
@@ -2251,6 +2262,60 @@ public partial class RadialMenuWindow: Window
             source = VisualTreeHelper.GetParent(source);
         }
         return null;
+    }
+
+    void ShowDeskFlyout(Button parent, MenuAction action)
+    {
+        _flyoutParent = parent;
+        void Tip(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                HideHintImmediate();
+                return;
+            }
+
+            HintTitle.Text = "Пульт";
+            HintBody.Text = text;
+            HintCard.BeginAnimation(OpacityProperty, null);
+            HintCard.Opacity = 1;
+            HintCard.Visibility = Visibility.Visible;
+            PlaceHintCard();
+        }
+
+        var panel = DeskFlyout.Build(Tip, () => Dismissed?.Invoke(this, EventArgs.Empty));
+        panel.MouseEnter += FlyoutKeepAliveEnter;
+        panel.MouseLeave += FlyoutKeepAliveLeave;
+        _flyoutPanel = panel;
+        RingCanvas.Children.Add(panel);
+        _flyout.Add(panel);
+        panel.Measure(new System.Windows.Size(360, 560));
+        AttachFlyout(parent, panel, 348, Math.Max(panel.DesiredSize.Height, 220));
+    }
+
+    void ArmHint(MenuAction action)
+    {
+        CancelHint();
+        _hintAction = action;
+        _hintTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
+        _hintTimer.Tick += (_, _) =>
+        {
+            _hintTimer?.Stop();
+            if (_hintAction != null)
+                ShowHint(_hintAction);
+        };
+        _hintTimer.Start();
+    }
+
+    void CancelHint()
+    {
+        _hintTimer?.Stop();
+        _hintTimer = null;
+        _hintAction = null;
+        HideHintImmediate();
     }
 
     private void ShowHint(MenuAction action)

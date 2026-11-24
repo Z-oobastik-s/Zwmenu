@@ -51,6 +51,7 @@ sealed class EdgeCapture : IDisposable
     private IntPtr _mouseHook;
     private IntPtr _keyHook;
     private bool _peerOnRight = true;
+    private bool _allowCross = true;
     private bool _attached;
     private volatile bool _captured;
     private volatile bool _hosting;
@@ -96,6 +97,13 @@ sealed class EdgeCapture : IDisposable
     {
         get => _peerOnRight;
         set => _peerOnRight = value;
+    }
+
+    /// <summary>Разрешён ли уход курсора на второй ноутбук по краю.</summary>
+    public bool AllowCross
+    {
+        get => _allowCross;
+        set => _allowCross = value;
     }
 
     public Action<byte[]>? Sink { get; set; }
@@ -605,7 +613,7 @@ sealed class EdgeCapture : IDisposable
         }
 
         // Пока игра прячет курсор, край не переход. В меню и в поле ввода курсор виден, уход на второй ноутбук снова можно.
-        if (CursorHidden())
+        if (CursorHidden() || !_allowCross)
         {
             _pinned = false;
             return CallNextHookEx(_mouseHook, nCode, wParam, lParam);

@@ -38,6 +38,7 @@ public sealed class MenuAction: INotifyPropertyChanged
     /// <summary>Стеклянная полка для файлов, снятых с рабочего стола.</summary>
     public const string ShelfValue = "zwmenu:shelf";
     public const string WorkshopValue = "zwmenu:workshop";
+    public const string DeskValue = "zwmenu:desk";
     private int _tag;
     private string _label = "";
     private string _description = "";
@@ -177,7 +178,7 @@ public sealed class MenuAction: INotifyPropertyChanged
     {
         if (Kind != ActionKind.Group)
             return false;
-        if (IsProcessGroup)
+        if (IsProcessGroup || IsDeskPanel)
             return false;
         if (string.Equals(GroupLayout, "folders", StringComparison.OrdinalIgnoreCase))
             return true;
@@ -215,6 +216,13 @@ public sealed class MenuAction: INotifyPropertyChanged
     public bool IsProcessGroup =>
         Kind == ActionKind.Group
         && string.Equals(GroupLayout, "processes", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Пульт: выезд с питанием, звуком, яркостью и трансляцией.</summary>
+    [JsonIgnore]
+    public bool IsDeskPanel =>
+        Kind == ActionKind.Group
+        && (string.Equals(GroupLayout, "desk", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Value, DeskValue, StringComparison.OrdinalIgnoreCase));
 
     [JsonIgnore]
     public string Role => Tag == 0 ? "Центр": $"По кругу: {Tag}";
@@ -312,6 +320,7 @@ public sealed class MenuAction: INotifyPropertyChanged
                 Item(-1, "Изображения", "Открывает папку «Изображения».", ActionKind.Launch, pictures, "\uE91B", "#FF5E3E5A")),
             Item(5, "Проводник", "Открывает «Этот компьютер».", ActionKind.Launch, "explorer.exe", "\uE8B7", "#FF3E4E62"),
         };
+        list.Add(MakeDeskItem(16));
 
         var panel = Item(6, "Панель управления", "Классическая панель управления: все элементы крупными значками.", ActionKind.Launch, "explorer.exe", "\uE713", "#FF5A3E4E");
         panel.Arguments = @"shell:::{21EC2020-3AEA-1069-A2DD-08002B30309D}";
@@ -345,6 +354,11 @@ public sealed class MenuAction: INotifyPropertyChanged
             ActionKind.Launch, WorkshopValue, "\uE90F", "#FF4A5560"));
         return list;
     }
+
+    public static MenuAction MakeDeskItem(int tag) =>
+        GroupItem(tag, "Пульт",
+            "Наведи: питание, звук, яркость, переход курсора и трансляция второго экрана.",
+            "\uE713", "#FF3E5A6E", "desk");
 
     public static bool IsLocalPath(string value) =>
         value.Contains('\\') || value.Contains('/') || (value.Length >= 2 && value[1] == ':');

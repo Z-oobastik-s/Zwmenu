@@ -21,6 +21,13 @@ public static class WorkshopHub
     public const byte PrintPart = 5;
     public const byte PrintEnd = 6;
     public const byte Note = 7;
+    public const byte PowerSleep = 8;
+    public const byte PowerReboot = 9;
+    public const byte PowerOff = 10;
+    public const byte VolumeSet = 11;
+    public const byte BrightnessSet = 12;
+    public const byte GlanceLiveStart = 13;
+    public const byte GlanceLiveStop = 14;
 
     const int Chunk = 48_000;
     static readonly object Gate = new();
@@ -30,6 +37,7 @@ public static class WorkshopHub
     static MemoryStream? _print;
     static string _printName = "file";
     static TaskCompletionSource<string>? _printWait;
+    static int _liveToken;
 
     public static event Action<string>? Noted;
 
@@ -69,7 +77,63 @@ public static class WorkshopHub
             case Note:
                 NoteFromPeer(Encoding.UTF8.GetString(body, 2, body.Length - 2));
                 break;
+            case PowerSleep:
+                Task.Run(() => DeskControl.SleepLocal());
+                break;
+            case PowerReboot:
+                Task.Run(() => DeskControl.RebootLocal());
+                break;
+            case PowerOff:
+                Task.Run(() => DeskControl.ShutdownLocal());
+                break;
+            case VolumeSet:
+                if (body.Length >= 7)
+                {
+                    float level = BinaryPrimitives.ReadSingleLittleEndian(body.AsSpan(2));
+                    bool mute = body[6] != 0;
+                    DeskControl.ApplyPeerVolume(level, mute);
+                }
+                break;
+            case BrightnessSet:
+                if (body.Length >= 3)
+                    DeskControl.ApplyPeerBrightness(body[2]);
+                break;
+            case GlanceLiveStart:
+                StartLiveSend();
+                break;
+            case GlanceLiveStop:
+                Interlocked.Increment(ref _liveToken);
+                break;
         }
+    }
+
+    public static bool SendVolumeToPeer(float level, bool mute)
+    {
+        var rest = new byte[5];
+        BinaryPrimitives.WriteSingleLittleEndian(rest, Math.Clamp(level, 0f, 1f));
+        rest[4] = (byte)(mute ? 1 : 0);
+        return Send(VolumeSet, rest);
+    }
+
+    public static bool SendBrightnessToPeer(int level) =>
+        Send(BrightnessSet, new byte[] { (byte)Math.Clamp(level, 0, 100) });
+
+    public static bool StartPeerLive() => Send(GlanceLiveStart, ReadOnlySpan<byte>.Empty);
+
+    public static bool StopPeerLive() => Send(GlanceLiveStop, ReadOnlySpan<byte>.Empty);
+
+    static void StartLiveSend()
+    {
+        int token = Interlocked.Increment(ref _liveToken);
+        Task.Run(async () =>
+        {
+            while (Volatile.Read(ref _liveToken) == token && EdgeShareService.Shared.Linked)
+            {
+                CaptureAndSend();
+                try { await Task.Delay(700).ConfigureAwait(false); }
+                catch { break; }
+            }
+        });
     }
 
     public static async Task<string> SendFileToPrint(string path)
