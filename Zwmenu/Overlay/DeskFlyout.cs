@@ -153,9 +153,14 @@ static class DeskFlyout
         var apps = new StackPanel();
         foreach (var app in DeskControl.ListAppVolumes().Take(5))
         {
-            var name = ValueLabel(Trim(app.Name, 14), dim: true);
-            name.Width = 96;
-            name.TextAlignment = TextAlignment.Left;
+            var name = new TextBlock
+            {
+                Text = Trim(app.Name, 28),
+                Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
+                FontSize = 11.5,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(2, 0, 2, 0)
+            };
             var pct = ValueLabel(Pct(app.Level));
             var slider = MakeSlider(0, 1, app.Level, tip, "Громкость «" + app.Name + "».");
             string appId = app.Id;
@@ -166,15 +171,10 @@ static class DeskFlyout
                 pct.Text = Pct((float)e.NewValue);
                 tip(appName + ": " + pct.Text);
             };
-            var row = new DockPanel { Margin = new Thickness(2, 2, 2, 4), LastChildFill = true };
-            DockPanel.SetDock(name, Dock.Left);
-            DockPanel.SetDock(pct, Dock.Right);
-            name.Margin = new Thickness(0, 0, 8, 0);
-            pct.Margin = new Thickness(8, 0, 0, 0);
-            row.Children.Add(name);
-            row.Children.Add(pct);
-            row.Children.Add(slider);
-            apps.Children.Add(row);
+            var line = SliderLine(slider, pct);
+            line.Margin = new Thickness(2, 0, 2, 6);
+            apps.Children.Add(name);
+            apps.Children.Add(line);
         }
 
         if (apps.Children.Count == 0)
@@ -188,7 +188,7 @@ static class DeskFlyout
             });
         }
 
-        root.Children.Add(MakeHiddenScroll(apps, 72));
+        root.Children.Add(MakeHiddenScroll(apps, 120));
 
         root.Children.Add(Head("Яркость"));
         var lamps = DeskControl.ListScreens();
@@ -304,47 +304,77 @@ static class DeskFlyout
                 WorkshopWindow.ShowCurrent();
             }, tip, "Окно мастерской: печать, сеть и прочее.")));
 
+        var scroll = MakeHiddenScroll(root, 620);
         return new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xF5, 0x14, 0x16, 0x1A)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0xCC, 0x3A, 0x48, 0x52)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
-            Padding = new Thickness(12, 10, 12, 12),
-            Child = MakeHiddenScroll(root, 620),
-            Width = 364,
+            Width = 340,
+            Child = scroll,
+            Background = Brushes.Transparent,
             SnapsToDevicePixels = true
         };
     }
 
     static Border StatusBanner(string text, bool ok)
     {
+        var fg = ok ? TemplateTheme.AccentText : Color.FromRgb(0xE7, 0xB4, 0xB0);
+        var rail = new Border
+        {
+            Width = 3,
+            Margin = new Thickness(0, 1, 8, 1),
+            CornerRadius = new CornerRadius(1.5),
+            Background = TemplateTheme.Brush(fg),
+            Opacity = 0.9
+        };
+        DockPanel.SetDock(rail, Dock.Left);
+        var row = new DockPanel { LastChildFill = true };
+        row.Children.Add(rail);
+        row.Children.Add(new TextBlock
+        {
+            Text = text,
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+            FontSize = 12,
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
         return new Border
         {
-            Background = new SolidColorBrush(ok
-                ? Color.FromArgb(0x55, 0x2A, 0x5A, 0x3A)
-                : Color.FromArgb(0x55, 0x5A, 0x3A, 0x2A)),
-            CornerRadius = new CornerRadius(8),
+            Background = TemplateTheme.Brush(ok ? TemplateTheme.StatusOk : TemplateTheme.StatusWarn),
+            BorderBrush = TemplateTheme.Brush(Color.FromArgb(0x66, fg.R, fg.G, fg.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerChip),
             Padding = new Thickness(10, 7, 10, 7),
-            Margin = new Thickness(0, 0, 0, 8),
-            Child = new TextBlock
-            {
-                Text = text,
-                Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap
-            }
+            Margin = new Thickness(0, 4, 0, 8),
+            Child = row
         };
     }
 
-    static UIElement Head(string text) => new TextBlock
+    static UIElement Head(string text)
     {
-        Text = text,
-        Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
-        FontSize = 12,
-        FontWeight = FontWeights.SemiBold,
-        Margin = new Thickness(0, 10, 0, 6)
-    };
+        var row = new DockPanel { Margin = new Thickness(0, 10, 0, 6) };
+        var mark = new Border
+        {
+            Width = 3,
+            Height = 12,
+            Margin = new Thickness(0, 1, 7, 0),
+            CornerRadius = new CornerRadius(1.5),
+            Background = TemplateTheme.Brush(TemplateTheme.AccentText),
+            Opacity = 0.75,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        DockPanel.SetDock(mark, Dock.Left);
+        row.Children.Add(mark);
+        row.Children.Add(new TextBlock
+        {
+            Text = text,
+            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return row;
+    }
 
     static TextBlock Dim(string text) => new()
     {
@@ -389,8 +419,8 @@ static class DeskFlyout
         var label = new TextBlock
         {
             Text = text,
-            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
-            FontFamily = new FontFamily("Segoe UI"),
+            Foreground = TemplateTheme.Brush(accent ? TemplateTheme.AccentText : TemplateTheme.Fg),
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
             FontSize = 12,
             FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
             TextAlignment = TextAlignment.Center,
@@ -400,12 +430,15 @@ static class DeskFlyout
         };
         var fill = accent ? TemplateTheme.Accent : TemplateTheme.BtnBg;
         var hover = accent ? TemplateTheme.AccentHover : TemplateTheme.BtnHover;
+        var edge = accent
+            ? Color.FromArgb(0x66, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)
+            : TemplateTheme.Border;
         var border = new Border
         {
             Background = TemplateTheme.Brush(fill),
-            BorderBrush = TemplateTheme.Brush(TemplateTheme.Border),
+            BorderBrush = TemplateTheme.Brush(edge),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerChip),
             Padding = new Thickness(8, 9, 8, 9),
             Margin = new Thickness(3),
             MinHeight = 38,

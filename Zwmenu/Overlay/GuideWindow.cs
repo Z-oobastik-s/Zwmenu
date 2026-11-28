@@ -21,9 +21,9 @@ public sealed class GuideWindow : Window
         ShowActivated = false;
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
-        Width = 460;
+        Width = 480;
         SizeToContent = SizeToContent.Height;
-        FontFamily = new FontFamily("Segoe UI");
+        FontFamily = new FontFamily(UiTheme.Current.FontUi);
         MouseEnter += (_, _) => _inside = true;
         MouseLeave += (_, _) => _inside = false;
         PreviewKeyDown += (_, e) =>
@@ -43,24 +43,29 @@ public sealed class GuideWindow : Window
             cards.Children.Add(Line("Памятка", "Настройки не прочитались. Меню откроется правым кликом по кубику у часов."));
         }
 
-        var root = new Border
+        var scroll = TrayPaint.HiddenScroll(cards);
+        scroll.MaxHeight = 420;
+        var body = new StackPanel();
+        body.Children.Add(ForgeChrome.BrandHead("Zwmenu", "Где что лежит, и что будет, если нажать."));
+        body.Children.Add(scroll);
+
+        var shell = ForgeChrome.Shell(body, new Thickness(14, 12, 14, 10));
+        Content = shell;
+        ContentRendered += (_, _) =>
         {
-            Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13)),
-            BorderBrush = TrayPaint.Brush(Color.FromRgb(0x3A, 0x3C, 0x40)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(16, 14, 16, 10),
-            Effect = TrayPaint.Shadow(),
-            Child = new StackPanel
-            {
-                Children =
-                {
-                    TitleBlock(),
-                    cards
-                }
-            }
+            double room = TrayPaint.Room(
+                System.Windows.Forms.Cursor.Position.X,
+                System.Windows.Forms.Cursor.Position.Y);
+            scroll.MaxHeight = Math.Max(180, Math.Min(420, room - 120));
+            ForgeChrome.FadeIn(shell);
         };
-        Content = root;
+        PreviewMouseWheel += (_, e) =>
+        {
+            if (scroll.ScrollableHeight <= 0)
+                return;
+            scroll.ScrollToVerticalOffset(scroll.VerticalOffset - e.Delta * 0.45);
+            e.Handled = true;
+        };
     }
 
     public static void ShowNear(int x, int y)
@@ -124,54 +129,46 @@ public sealed class GuideWindow : Window
         base.OnClosed(e);
     }
 
-    static UIElement TitleBlock()
+    static UIElement Line(string gesture, string text)
     {
-        var stack = new StackPanel { Margin = new Thickness(2, 0, 2, 8) };
-        stack.Children.Add(new TextBlock
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        var rail = new System.Windows.Controls.Border
         {
-            Text = "Zwmenu",
-            Foreground = TrayPaint.Brush(TemplateTheme.Fg),
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Где что лежит, и что будет, если нажать.",
-            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
-            FontSize = 12,
-            Margin = new Thickness(0, 2, 0, 0)
-        });
-        return stack;
-    }
+            Width = 3,
+            Margin = new Thickness(0, 2, 10, 2),
+            Background = TemplateTheme.Brush(TemplateTheme.AccentText),
+            CornerRadius = new CornerRadius(1.5),
+            Opacity = 0.75,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        Grid.SetColumn(rail, 0);
+        row.Children.Add(rail);
 
-    static Border Line(string gesture, string text)
-    {
-        var mark = new TextBlock
+        var stack = new StackPanel();
+        stack.Children.Add(new TextBlock
         {
             Text = gesture,
-            Foreground = TrayPaint.Brush(TemplateTheme.AccentText),
-            FontSize = 13,
-            FontWeight = FontWeights.SemiBold
-        };
-        var body = new TextBlock
+            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
+            FontSize = 12.5,
+            FontWeight = FontWeights.SemiBold,
+            FontFamily = new FontFamily(UiTheme.Current.FontUi)
+        });
+        stack.Children.Add(new TextBlock
         {
             Text = text,
-            Foreground = TrayPaint.Brush(Color.FromRgb(0xD8, 0xD9, 0xDA)),
-            FontSize = 12.5,
+            Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
+            FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 2, 0, 0),
-            LineHeight = 17
-        };
-        var row = new StackPanel();
-        row.Children.Add(mark);
-        row.Children.Add(body);
-        return new Border
-        {
-            Padding = new Thickness(2, 7, 2, 7),
-            BorderBrush = TrayPaint.Brush(Color.FromRgb(0x2A, 0x2C, 0x30)),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = row
-        };
+            Margin = new Thickness(0, 4, 0, 0),
+            LineHeight = 17,
+            FontFamily = new FontFamily(UiTheme.Current.FontUi)
+        });
+        Grid.SetColumn(stack, 1);
+        row.Children.Add(stack);
+
+        return ForgeChrome.Card(row, new Thickness(10, 8, 10, 8));
     }
 
     static IEnumerable<(string Gesture, string Text)> Cards()

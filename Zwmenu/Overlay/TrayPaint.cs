@@ -16,13 +16,8 @@ static class TrayPaint
         return brush;
     }
 
-    public static DropShadowEffect Shadow() => new()
-    {
-        Color = Colors.Black,
-        BlurRadius = 28,
-        ShadowDepth = 0,
-        Opacity = 0.55
-    };
+    /// <summary>Лёгкая тень. Старый BlurRadius 28 жрал GPU на i3.</summary>
+    public static DropShadowEffect Shadow() => TemplateTheme.SoftShadow();
 
     public static double Scale() => ScaleAt(0, 0);
 

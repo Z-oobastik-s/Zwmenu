@@ -21,8 +21,9 @@ public sealed class TrayMenuWindow : Window
         Width = 470,
         Margin = new Thickness(0, 0, 0, 14),
         HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-        Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13))
+        Background = TemplateTheme.Brush(TemplateTheme.BgPanel)
     };
+    readonly ScrollViewer _mainScroll;
     readonly ScrollViewer _voiceScroll;
     readonly List<VoiceChip> _chips = new();
     TextBlock? _toggleLabel;
@@ -43,10 +44,10 @@ public sealed class TrayMenuWindow : Window
         ShowInTaskbar = false;
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
-        Width = 332;
+        Width = 348;
         SizeToContent = SizeToContent.Height;
         MaxHeight = 900;
-        FontFamily = new FontFamily("Segoe UI");
+        FontFamily = new FontFamily(UiTheme.Current.FontUi);
         ShowActivated = true;
         MouseEnter += (_, _) => _inside = true;
         MouseLeave += (_, _) => _inside = false;
@@ -64,19 +65,21 @@ public sealed class TrayMenuWindow : Window
                 CloseMenu();
         };
         _main.Children.Add(Head(clipPhase));
-        _main.Children.Add(Shots());
-        _main.Children.Add(Rule());
+        _main.Children.Add(ForgeChrome.Card(Shots(), new Thickness(8, 8, 8, 8)));
+        _main.Children.Add(ForgeChrome.Section("Медиа"));
         _main.Children.Add(Row("Открыть статус", () => { CloseMenu(); StatusRequested?.Invoke(); }));
         _main.Children.Add(Row("Просмотр фото", () => { CloseMenu(); PhotoWindow.PickAndShow(); }));
         _main.Children.Add(Row("Просмотр видео", () => { CloseMenu(); VideoWindow.PickAndShow(); }));
         _main.Children.Add(Row("Музыка", () => { CloseMenu(); MusicWindow.PickAndShow(); }));
+        _main.Children.Add(ForgeChrome.Section("Связь"));
         _main.Children.Add(EdgeRow());
         _main.Children.Add(Row("Настроить два экрана", () => { CloseMenu(); EdgeShareWindow.ShowCurrent(); }));
+        _main.Children.Add(ForgeChrome.Section("Инструменты"));
         _main.Children.Add(Row("Шаблоны", () => { CloseMenu(); SnippetWindow.ShowCurrent(); }));
         _main.Children.Add(Row("Голос", ShowVoice));
         _main.Children.Add(Row("Настройки колеса", () => { CloseMenu(); SettingsRequested?.Invoke(); }));
         _main.Children.Add(Row("Проверить обновление", () => { CloseMenu(); AppUpdate.CheckSoon(manual: true); }));
-        _main.Children.Add(Rule());
+        _main.Children.Add(ForgeChrome.Section("Справка"));
         _main.Children.Add(Row("Как это работает", () =>
         {
             var point = System.Windows.Forms.Cursor.Position;
@@ -85,30 +88,27 @@ public sealed class TrayMenuWindow : Window
         }));
         _main.Children.Add(Row("Выход", () => { CloseMenu(); ExitRequested?.Invoke(); }, leave: true));
 
+        _mainScroll = TrayPaint.HiddenScroll(_main);
+        _mainScroll.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
+        _mainScroll.Background = Brushes.Transparent;
         _voiceScroll = TrayPaint.HiddenScroll(_voicePage);
         _voiceScroll.Visibility = Visibility.Collapsed;
         _voiceScroll.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
-        _voiceScroll.Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13));
+        _voiceScroll.Background = Brushes.Transparent;
         PreviewMouseWheel += (_, e) =>
         {
-            if (_voiceScroll.Visibility != Visibility.Visible || _voiceScroll.ScrollableHeight <= 0)
+            var scroll = _voiceScroll.Visibility == Visibility.Visible ? _voiceScroll : _mainScroll;
+            if (scroll.ScrollableHeight <= 0)
                 return;
-            _voiceScroll.ScrollToVerticalOffset(_voiceScroll.VerticalOffset - e.Delta * 0.45);
+            scroll.ScrollToVerticalOffset(scroll.VerticalOffset - e.Delta * 0.45);
             e.Handled = true;
         };
         var pages = new Grid();
-        pages.Children.Add(_main);
+        pages.Children.Add(_mainScroll);
         pages.Children.Add(_voiceScroll);
-        Content = new Border
-        {
-            Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13)),
-            BorderBrush = TrayPaint.Brush(Color.FromRgb(0x3A, 0x3C, 0x40)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(8, 8, 8, 8),
-            Effect = TrayPaint.Shadow(),
-            Child = pages
-        };
+        var shell = ForgeChrome.Shell(pages, new Thickness(10, 10, 10, 8));
+        Content = shell;
+        ForgeChrome.FadeIn(shell);
         FillVoice();
         VoiceShiftLive.Shared.Changed += OnVoiceLive;
     }
@@ -160,6 +160,22 @@ public sealed class TrayMenuWindow : Window
 
     void Fit()
     {
+        double room = TrayPaint.Room(_ax, _ay);
+        MaxHeight = Math.Max(220, room);
+        // Оставляем место рамке Shell, иначе низ меню уезжает за край экрана.
+        double inner = Math.Max(160, MaxHeight - 28);
+        if (_voiceScroll.Visibility == Visibility.Visible)
+        {
+            _voiceScroll.MaxHeight = inner;
+            _voiceScroll.Height = Math.Min(_voiceScroll.Height, inner);
+        }
+        else
+        {
+            _mainScroll.MaxHeight = inner;
+            Height = double.NaN;
+            SizeToContent = SizeToContent.Height;
+        }
+
         UpdateLayout();
         TrayPaint.PlaceInCorner(this, _ax, _ay);
     }
@@ -167,23 +183,23 @@ public sealed class TrayMenuWindow : Window
     void ShowVoice()
     {
         FillVoice();
-        _main.Visibility = Visibility.Collapsed;
+        _mainScroll.Visibility = Visibility.Collapsed;
         _voiceScroll.Visibility = Visibility.Visible;
         Width = 504;
         SizeToContent = SizeToContent.Manual;
         double room = TrayPaint.Room(_ax, _ay);
-        MaxHeight = room;
+        MaxHeight = Math.Max(220, room);
         _voicePage.Measure(new System.Windows.Size(470, double.PositiveInfinity));
         double content = _voicePage.DesiredSize.Height;
-        const double chrome = 18;
-        double height = Math.Min(room, Math.Max(260, content + chrome));
+        const double chrome = 28;
+        double height = Math.Min(MaxHeight, Math.Max(260, content + chrome));
         Height = height;
         double scrollH = Math.Max(180, height - chrome);
         _voiceScroll.Height = scrollH;
         _voiceScroll.MaxHeight = scrollH;
         Fit();
         double missing = _voiceScroll.ExtentHeight - _voiceScroll.ViewportHeight;
-        if (missing > 0.5 && Height + missing <= room + 0.5)
+        if (missing > 0.5 && Height + missing <= MaxHeight + 0.5)
         {
             Height += missing;
             _voiceScroll.Height += missing;
@@ -197,11 +213,10 @@ public sealed class TrayMenuWindow : Window
         _voiceScroll.Visibility = Visibility.Collapsed;
         _voiceScroll.Height = double.NaN;
         _voiceScroll.MaxHeight = double.PositiveInfinity;
-        _main.Visibility = Visibility.Visible;
-        Width = 332;
+        _mainScroll.Visibility = Visibility.Visible;
+        Width = 348;
         Height = double.NaN;
         SizeToContent = SizeToContent.Height;
-        MaxHeight = TrayPaint.Room(_ax, _ay);
         Fit();
     }
 
@@ -217,47 +232,32 @@ public sealed class TrayMenuWindow : Window
 
     static UIElement Head(int clipPhase)
     {
-        var stack = new StackPanel { Margin = new Thickness(8, 6, 8, 8) };
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Zwmenu",
-            Foreground = TrayPaint.Brush(TemplateTheme.Fg),
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold
-        });
         string sub = clipPhase == 2
             ? "Идёт запись. Esc останавливает."
             : clipPhase == 1
                 ? "Готовлю запись."
                 : "Правый клик открыл это меню.";
-        stack.Children.Add(new TextBlock
-        {
-            Text = sub,
-            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
-            FontSize = 11.5,
-            Margin = new Thickness(0, 1, 0, 0)
-        });
-        return stack;
+        return ForgeChrome.BrandHead("Zwmenu", sub, 32);
     }
 
     UIElement Shots()
     {
-        var wrap = new StackPanel { Margin = new Thickness(4, 0, 4, 6) };
+        var wrap = new StackPanel();
         wrap.Children.Add(new TextBlock
         {
             Text = "Недавние снимки",
-            Foreground = TrayPaint.Brush(TemplateTheme.Fg),
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
             FontSize = 12.5,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(4, 0, 0, 2)
+            Margin = new Thickness(0, 0, 0, 2)
         });
         wrap.Children.Add(new TextBlock
         {
-            Text = "Наведение показывает снимок. Клик копирует картинку. Alt и клик копируют текст. Правый клик открывает файл.",
-            Foreground = TrayPaint.Brush(TemplateTheme.FgDim),
+            Text = "Наведение показывает. Клик копирует. Alt и клик копируют текст. Правый клик открывает файл.",
+            Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(4, 0, 4, 8)
+            Margin = new Thickness(0, 0, 0, 8)
         });
 
         var paths = ShotHistory.Paths();
@@ -297,8 +297,8 @@ public sealed class TrayMenuWindow : Window
             Height = 48,
             Margin = new Thickness(2, 0, 2, 0),
             CornerRadius = new CornerRadius(8),
-            Background = TrayPaint.Brush(Color.FromRgb(0x1A, 0x1B, 0x1E)),
-            BorderBrush = TrayPaint.Brush(Color.FromRgb(0x2E, 0x30, 0x34)),
+            Background = TemplateTheme.Brush(TemplateTheme.BtnBg),
+            BorderBrush = TemplateTheme.Brush(TemplateTheme.Border),
             BorderThickness = new Thickness(1),
             ClipToBounds = true,
             Cursor = Cursors.Hand,
@@ -332,7 +332,7 @@ public sealed class TrayMenuWindow : Window
             if (_ready)
                 ShotPeek.Show(path, this);
         };
-        frame.MouseLeave += (_, _) => frame.BorderBrush = TrayPaint.Brush(Color.FromRgb(0x2E, 0x30, 0x34));
+        frame.MouseLeave += (_, _) => frame.BorderBrush = TemplateTheme.Brush(TemplateTheme.Border);
         frame.MouseLeftButtonUp += (_, e) =>
         {
             bool alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
@@ -419,7 +419,8 @@ public sealed class TrayMenuWindow : Window
             VoiceShiftLive.Shared.ToggleSaved();
             PaintVoice();
         });
-        _toggleLabel = (TextBlock)toggle.Child;
+        _toggleLabel = ForgeChrome.RowLabel(toggle)
+                       ?? throw new InvalidOperationException("Нет подписи у строки голоса.");
         _voicePage.Children.Add(toggle);
         var hear = Row("", () =>
         {
@@ -430,7 +431,8 @@ public sealed class TrayMenuWindow : Window
                 _voiceIntent = 1;
             PaintVoice();
         });
-        _hearLabel = (TextBlock)hear.Child;
+        _hearLabel = ForgeChrome.RowLabel(hear)
+                     ?? throw new InvalidOperationException("Нет подписи у строки прослушки.");
         _voicePage.Children.Add(hear);
         _voiceStatus = new TextBlock
         {
@@ -514,9 +516,9 @@ public sealed class TrayMenuWindow : Window
         foreach (var chip in _chips)
         {
             bool on = chip.Index == current;
-            chip.Idle = TrayPaint.Brush(on ? Color.FromRgb(0x1A, 0x2E, 0x2A) : Color.FromRgb(0x1C, 0x1E, 0x22));
-            chip.Hot = TrayPaint.Brush(on ? Color.FromRgb(0x24, 0x3C, 0x36) : Color.FromRgb(0x2A, 0x2C, 0x32));
-            chip.Box.BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : Color.FromRgb(0x32, 0x34, 0x38));
+            chip.Idle = TrayPaint.Brush(on ? TemplateTheme.AccentSoft : TemplateTheme.BtnBg);
+            chip.Hot = TrayPaint.Brush(on ? TemplateTheme.Accent : TemplateTheme.BtnHover);
+            chip.Box.BorderBrush = TrayPaint.Brush(on ? TemplateTheme.AccentText : TemplateTheme.Border);
             chip.Label.Foreground = TrayPaint.Brush(on ? TemplateTheme.AccentText : TemplateTheme.Fg);
             chip.Box.Background = chip.Box.IsMouseOver ? chip.Hot : chip.Idle;
         }
@@ -591,34 +593,15 @@ public sealed class TrayMenuWindow : Window
         public Brush Hot = Brushes.Transparent;
     }
 
-    static Border Row(string text, Action click, bool leave = false)
-    {
-        var label = new TextBlock
-        {
-            Text = text,
-            Foreground = TrayPaint.Brush(leave ? Color.FromRgb(0xE7, 0xB4, 0xB0) : TemplateTheme.Fg),
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var row = new Border
-        {
-            Background = Brushes.Transparent,
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(8, 7, 8, 7),
-            Cursor = Cursors.Hand,
-            Child = label
-        };
-        row.MouseEnter += (_, _) => row.Background = TrayPaint.Brush(Color.FromRgb(0x22, 0x24, 0x28));
-        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
-        row.MouseLeftButtonUp += (_, _) => click();
-        return row;
-    }
+    static Border Row(string text, Action click, bool leave = false) =>
+        ForgeChrome.MenuRow(text, click, danger: leave);
 
     static Border Rule() => new()
     {
         Height = 1,
-        Background = TrayPaint.Brush(Color.FromRgb(0x2A, 0x2C, 0x30)),
-        Margin = new Thickness(8, 4, 8, 4)
+        Background = TemplateTheme.Brush(TemplateTheme.Border),
+        Margin = new Thickness(4, 6, 4, 6),
+        Opacity = 0.7
     };
 
     static ImageSource? LoadThumb(string path)
@@ -891,10 +874,10 @@ static class ShotPeek
             stack.Children.Add(_copyText);
             Content = new Border
             {
-                Background = TrayPaint.Brush(Color.FromRgb(0x10, 0x11, 0x13)),
-                BorderBrush = TrayPaint.Brush(Color.FromRgb(0x3A, 0x3C, 0x40)),
+                Background = TemplateTheme.Brush(TemplateTheme.BgPanel),
+                BorderBrush = TemplateTheme.Brush(TemplateTheme.Border),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(16),
+                CornerRadius = new CornerRadius(UiTheme.Current.CornerPanel),
                 Padding = new Thickness(12),
                 Effect = TrayPaint.Shadow(),
                 Child = stack

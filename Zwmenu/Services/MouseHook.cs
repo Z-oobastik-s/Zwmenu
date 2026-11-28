@@ -205,6 +205,13 @@ public sealed class MouseHook : IDisposable
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
+            // В игре СКМ нужен самой игре: колесо не открываем.
+            if (GameFocus.IsPlaying(fresh: true))
+            {
+                _swallowArmed = false;
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
+            }
+
             _swallowArmed = true;
             SafeInvoke(() => MiddleDown?.Invoke(this, pt));
             return Handled;

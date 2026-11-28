@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Zwmenu.Services;
 
@@ -29,43 +28,100 @@ public sealed class UpdateDoneWindow : Window
         Cursor = Cursors.Arrow;
         Background = TemplateTheme.Brush(TemplateTheme.BgDeep);
 
-        var canvas = new Canvas { IsHitTestVisible = false, Width = 520, Height = 280 };
-        Add(canvas, Block(168, 168, 0, 0, Color.FromRgb(0x14, 0x24, 0x20)));
-        Add(canvas, Block(86, 86, 404, 0, Color.FromRgb(0x18, 0x18, 0x1C)));
-        Add(canvas, Block(14, 168, 0, 112, TemplateTheme.AccentText));
-        Add(canvas, Outline(120, 120, 372, 132));
-        Add(canvas, Block(46, 8, 36, 214, Color.FromRgb(0x3A, 0x3A, 0x40)));
-        Add(canvas, Block(22, 8, 36, 230, TemplateTheme.AccentText));
+        var chrome = new Grid { ClipToBounds = true };
+        chrome.Children.Add(new System.Windows.Controls.Border
+        {
+            Background = TemplateTheme.Brush(TemplateTheme.BgPanel)
+        });
+        chrome.Children.Add(new System.Windows.Controls.Border
+        {
+            Background = ForgeChrome.PanelWash(),
+            IsHitTestVisible = false
+        });
+        chrome.Children.Add(new System.Windows.Controls.Border
+        {
+            BorderBrush = TemplateTheme.Brush(Color.FromArgb(0x55, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)),
+            BorderThickness = new Thickness(0, 2, 0, 0),
+            Margin = new Thickness(1),
+            IsHitTestVisible = false,
+            VerticalAlignment = VerticalAlignment.Top,
+            Height = 2
+        });
+
+        var markHost = new System.Windows.Controls.Border
+        {
+            Width = 88,
+            Height = 88,
+            CornerRadius = new CornerRadius(44),
+            ClipToBounds = true,
+            BorderBrush = TemplateTheme.Brush(Color.FromArgb(0x77, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)),
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(44, 0, 28, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            Effect = TrayPaint.Shadow()
+        };
+        var mark = ForgeChrome.Mark();
+        if (mark != null)
+        {
+            markHost.Child = new System.Windows.Controls.Image
+            {
+                Source = mark,
+                Stretch = Stretch.UniformToFill
+            };
+        }
+        else
+        {
+            markHost.Background = TemplateTheme.Brush(TemplateTheme.AccentSoft);
+            markHost.Child = new System.Windows.Controls.Border
+            {
+                Width = 4,
+                Background = TemplateTheme.Brush(TemplateTheme.AccentText),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                Opacity = 0.85
+            };
+        }
+
+        var signal = new System.Windows.Controls.Border
+        {
+            Width = 6,
+            CornerRadius = new CornerRadius(3),
+            Background = TemplateTheme.Brush(TemplateTheme.AccentText),
+            Opacity = 0.35,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            Margin = new Thickness(36, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
 
         var title = new TextBlock
         {
             Text = "Обновлено",
-            FontFamily = new FontFamily("Segoe UI"),
-            FontSize = 34,
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 32,
             FontWeight = FontWeights.SemiBold,
             Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
-            Margin = new Thickness(0, 0, 0, 10)
+            Margin = new Thickness(0, 0, 0, 8)
         };
         var line = new TextBlock
         {
             Text = "Программа успешно обновлена.",
-            FontFamily = new FontFamily("Segoe UI"),
-            FontSize = 16,
-            Foreground = TemplateTheme.Brush(Color.FromRgb(0xC8, 0xC8, 0xC8)),
-            Margin = new Thickness(0, 0, 0, 8)
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 15,
+            Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
+            Margin = new Thickness(0, 0, 0, 6)
         };
         var version = new TextBlock
         {
             Text = "Сейчас стоит версия " + AppUpdate.Current,
-            FontFamily = new FontFamily("Segoe UI"),
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
             FontSize = 14,
-            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText)
+            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
+            FontWeight = FontWeights.SemiBold
         };
         var words = new StackPanel
         {
-            Margin = new Thickness(48, 0, 36, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Left
+            Margin = new Thickness(160, 0, 40, 28),
+            VerticalAlignment = VerticalAlignment.Center
         };
         words.Children.Add(title);
         words.Children.Add(line);
@@ -80,11 +136,21 @@ public sealed class UpdateDoneWindow : Window
             VerticalAlignment = VerticalAlignment.Bottom
         };
 
-        var root = new Grid();
-        root.Children.Add(canvas);
-        root.Children.Add(words);
-        root.Children.Add(_life);
-        Content = root;
+        chrome.Children.Add(signal);
+        chrome.Children.Add(markHost);
+        chrome.Children.Add(words);
+        chrome.Children.Add(_life);
+
+        var frame = new System.Windows.Controls.Border
+        {
+            BorderBrush = TemplateTheme.Brush(TemplateTheme.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerPanel),
+            Effect = TrayPaint.Shadow(),
+            Child = chrome
+        };
+
+        Content = frame;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(32) };
         _timer.Tick += (_, _) => Advance();
@@ -101,6 +167,7 @@ public sealed class UpdateDoneWindow : Window
         {
             Place();
             _timer.Start();
+            ForgeChrome.FadeIn(frame, 220);
         };
     }
 
@@ -125,38 +192,5 @@ public sealed class UpdateDoneWindow : Window
             ?? System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
         Left = area.Left + Math.Max(0, (area.Width - ActualWidth) / 2);
         Top = area.Top + Math.Max(0, (area.Height - ActualHeight) / 2);
-    }
-
-    static void Add(Canvas canvas, FrameworkElement shape)
-    {
-        canvas.Children.Add(shape);
-    }
-
-    static System.Windows.Shapes.Rectangle Block(double width, double height, double x, double y, Color color)
-    {
-        var shape = new System.Windows.Shapes.Rectangle
-        {
-            Width = width,
-            Height = height,
-            Fill = TemplateTheme.Brush(color)
-        };
-        Canvas.SetLeft(shape, x);
-        Canvas.SetTop(shape, y);
-        return shape;
-    }
-
-    static System.Windows.Shapes.Rectangle Outline(double width, double height, double x, double y)
-    {
-        var shape = new System.Windows.Shapes.Rectangle
-        {
-            Width = width,
-            Height = height,
-            Fill = Brushes.Transparent,
-            Stroke = TemplateTheme.Brush(Color.FromRgb(0x3A, 0x3A, 0x40)),
-            StrokeThickness = 1
-        };
-        Canvas.SetLeft(shape, x);
-        Canvas.SetTop(shape, y);
-        return shape;
     }
 }

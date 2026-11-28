@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using Zwmenu.Services;
 
 namespace Zwmenu.Overlay;
@@ -26,7 +27,7 @@ public sealed class UpdateWindow : Window
     UpdateWindow()
     {
         Title = "Обновление";
-        Width = 400;
+        Width = 420;
         SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.Manual;
         ResizeMode = ResizeMode.NoResize;
@@ -39,35 +40,37 @@ public sealed class UpdateWindow : Window
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
-            FontFamily = new FontFamily("Segoe UI"),
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 12)
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 13.5,
+            LineHeight = 19
         };
         _fill = new System.Windows.Controls.Border
         {
-            Height = 8,
+            Height = 6,
             Width = 0,
             Background = TemplateTheme.Brush(TemplateTheme.AccentText),
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(3),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Left
         };
-        _track = new System.Windows.Controls.Border
+        _track = ForgeChrome.ProgressTrack(_fill);
+        _track.Visibility = Visibility.Collapsed;
+
+        _buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+
+        var body = new StackPanel();
+        body.Children.Add(ForgeChrome.BrandHead("Обновление", "Новая версия Zwmenu"));
+        body.Children.Add(ForgeChrome.Card(_text, new Thickness(12, 10, 12, 10)));
+        body.Children.Add(_track);
+        body.Children.Add(_buttons);
+
+        var shell = ForgeChrome.Shell(body, new Thickness(14, 12, 14, 10));
+        Content = shell;
+
+        ContentRendered += (_, _) =>
         {
-            Height = 8,
-            Background = TemplateTheme.Brush(TemplateTheme.ListBg),
-            CornerRadius = new CornerRadius(4),
-            Margin = new Thickness(0, 0, 0, 14),
-            Visibility = Visibility.Collapsed,
-            Child = _fill
+            Place();
+            ForgeChrome.FadeIn(shell);
         };
-        _buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-
-        var root = new StackPanel { Margin = new Thickness(16, 14, 16, 10) };
-        root.Children.Add(_text);
-        root.Children.Add(_track);
-        root.Children.Add(_buttons);
-        Content = root;
-
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape || _busy)
@@ -75,7 +78,6 @@ public sealed class UpdateWindow : Window
             e.Handled = true;
             Close();
         };
-        ContentRendered += (_, _) => Place();
         Closed += (_, _) =>
         {
             _alive = false;
@@ -165,7 +167,7 @@ public sealed class UpdateWindow : Window
                     return;
                 if (pair.Total > 0)
                 {
-                    _fill.Width = 352.0 * Math.Min(pair.Got, pair.Total) / pair.Total;
+                    _fill.Width = TrackWidth() * Math.Min(pair.Got, pair.Total) / pair.Total;
                     _text.Text = "Скачиваю " + Megabytes(pair.Got) + " из " + Megabytes(pair.Total) + " МБ";
                 }
                 else
@@ -246,6 +248,12 @@ public sealed class UpdateWindow : Window
         var height = ActualHeight > 1 ? ActualHeight : 170;
         Left = Math.Max(area.Left + 8, area.Right - width - 16);
         Top = Math.Max(area.Top + 8, area.Bottom - height - 16);
+    }
+
+    double TrackWidth()
+    {
+        var w = _track.ActualWidth;
+        return w > 1 ? w : 336;
     }
 
     static string Megabytes(long bytes) => ((bytes + 524288) / 1048576).ToString();

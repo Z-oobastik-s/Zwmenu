@@ -15,11 +15,26 @@ public sealed class AppearanceSettings
     /// <summary>0..11 — вид диска. 0..4 палитра, дальше рисунки. См. RingLooks.</summary>
     public int RingLook { get; set; }
 
+    /// <summary>Id темы окон: signal-forge, cold-obsidian, ember-line, frost-signal.</summary>
+    public string UiSkin { get; set; } = UiTheme.DefaultId;
+
+    /// <summary>
+    /// Если true, смена вида круга подтягивает подходящую тему окон.
+    /// Если false, UiSkin фиксирован вручную.
+    /// </summary>
+    public bool UiSkinFollowRing { get; set; } = true;
+
     /// <summary>hold | instant | alt — см. MiddleButtonMode.</summary>
     public string MiddleClickMode { get; set; } = "hold";
 
     /// <summary>Сколько мс держать СКМ, чтобы открыть колесо (режим hold).</summary>
     public int MiddleHoldMs { get; set; } = 220;
+
+    /// <summary>Форма выезда: fan, halo, ribbon, crown, burst, dock.</summary>
+    public string FlyoutStyle { get; set; } = FlyoutLooks.DefaultStyleId;
+
+    /// <summary>Появление: orbit, unfurl, cascade, dockslide.</summary>
+    public string FlyoutMotion { get; set; } = FlyoutLooks.DefaultMotionId;
 }
 
 public sealed record RingSkinOption(string FileName, string Title, string FullPath);
@@ -105,17 +120,21 @@ public static class AppearanceStore
             if (!File.Exists(FilePath))
             {
                 _cache = new AppearanceSettings();
+                Normalize(_cache);
+                UiTheme.Apply(_cache.UiSkin, raise: false);
                 return _cache;
             }
 
             string json = File.ReadAllText(FilePath);
             _cache = JsonSerializer.Deserialize<AppearanceSettings>(json, Options) ?? new AppearanceSettings();
             Normalize(_cache);
+            UiTheme.Apply(_cache.UiSkin, raise: false);
             return _cache;
         }
         catch
         {
             _cache = new AppearanceSettings();
+            UiTheme.Apply(_cache.UiSkin, raise: false);
             return _cache;
         }
     }
@@ -131,6 +150,7 @@ public static class AppearanceStore
         _cache = settings;
         _loaded = true;
         Revision++;
+        UiTheme.Apply(settings.UiSkin);
         // Скин мог смениться: сбросим только список (картинки кэширует RingImageCache).
         _skinsCache = null;
         RingImageCache.WarmActiveSkin();
@@ -264,5 +284,54 @@ public static class AppearanceStore
         s.MiddleHoldMs = Math.Clamp(s.MiddleHoldMs <= 0 ? 220 : s.MiddleHoldMs, 120, 600);
         s.RingLook = Math.Clamp(s.RingLook, 0, RingLooks.Count - 1);
         s.UseRingSkin = false;
+        if (string.IsNullOrWhiteSpace(s.UiSkin))
+            s.UiSkin = s.UiSkinFollowRing
+                ? UiTheme.SuggestForRingLook(s.RingLook)
+                : UiTheme.DefaultId;
+        else
+            s.UiSkin = UiTheme.Get(s.UiSkin).Id;
+        s.FlyoutStyle = FlyoutLooks.NormalizeStyle(s.FlyoutStyle);
+        s.FlyoutMotion = FlyoutLooks.NormalizeMotion(s.FlyoutMotion);
+    }
+
+    public static void SetFlyoutStyle(string id, bool save = true)
+    {
+        var s = Current;
+        s.FlyoutStyle = FlyoutLooks.NormalizeStyle(id);
+        if (save)
+            Save(s);
+    }
+
+    public static void SetFlyoutMotion(string id, bool save = true)
+    {
+        var s = Current;
+        s.FlyoutMotion = FlyoutLooks.NormalizeMotion(id);
+        if (save)
+            Save(s);
+    }
+
+    public static void SetRingLook(int look, bool save = true)
+    {
+        look = Math.Clamp(look, 0, RingLooks.Count - 1);
+        var s = Current;
+        s.RingLook = look;
+        s.UseRingSkin = false;
+        if (s.UiSkinFollowRing)
+            s.UiSkin = UiTheme.SuggestForRingLook(look);
+        if (save)
+            Save(s);
+        else
+            UiTheme.Apply(s.UiSkin);
+    }
+
+    public static void SetUiSkin(string id, bool followRing = false, bool save = true)
+    {
+        var s = Current;
+        s.UiSkin = UiTheme.Get(id).Id;
+        s.UiSkinFollowRing = followRing;
+        if (save)
+            Save(s);
+        else
+            UiTheme.Apply(s.UiSkin);
     }
 }

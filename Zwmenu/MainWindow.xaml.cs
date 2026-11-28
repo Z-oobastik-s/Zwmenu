@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using Zwmenu.Overlay;
 using Zwmenu.Services;
 
 namespace Zwmenu;
@@ -7,8 +9,8 @@ namespace Zwmenu;
 public partial class MainWindow: Window
 {
     private readonly LauncherService _launcher;
-    private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0xA8, 0xC5, 0xA0));
-    private static readonly Brush BadBrush = new SolidColorBrush(Color.FromRgb(0xD4, 0xA1, 0x9A));
+    private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0x6E, 0xE0, 0xC4));
+    private static readonly Brush BadBrush = new SolidColorBrush(Color.FromRgb(0xE7, 0xB4, 0xB0));
 
     public event EventHandler? SettingsRequested;
 
@@ -18,6 +20,10 @@ public partial class MainWindow: Window
         AppChrome.ApplyWindowIcon(this);
         OkBrush.Freeze();
         BadBrush.Freeze();
+        RootGrid.Background = ForgeChrome.PanelWash();
+        var mark = ForgeChrome.Mark();
+        if (mark != null)
+            MarkHost.Child = new System.Windows.Controls.Image { Source = mark, Stretch = Stretch.UniformToFill };
 
         _launcher = launcher;
         _launcher.StatusChanged += (_, _) => Dispatcher.Invoke(RefreshStatus);

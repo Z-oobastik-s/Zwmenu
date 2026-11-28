@@ -2,61 +2,122 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Zwmenu"
-        Height="420" Width="480"
-        MinWidth="440" MinHeight="360"
+        Height="460" Width="520"
+        MinWidth="460" MinHeight="380"
         WindowStartupLocation="CenterScreen"
-        Background="#FF141416"
-        Foreground="#FFF0EDE8"
+        Background="#FF08090B"
+        Foreground="#FFECEFF3"
         ResizeMode="CanMinimize"
         FontFamily="Segoe UI Variable Text, Segoe UI">
     <Window.Resources>
-        <LinearGradientBrush x:Key="MatteWash" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#FF17171A" Offset="0"/>
-            <GradientStop Color="#FF1C1B19" Offset="0.55"/>
-            <GradientStop Color="#FF141416" Offset="1"/>
-        </LinearGradientBrush>
+        <Style x:Key="ForgeButton" TargetType="Button">
+            <Setter Property="Background" Value="#FF1E3A36"/>
+            <Setter Property="Foreground" Value="#FF6EE0C4"/>
+            <Setter Property="BorderBrush" Value="#666EE0C4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="18,9"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF2A4C46"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#AA6EE0C4"/>
+                                <Setter Property="Foreground" Value="#FFECEFF3"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF16302C"/>
+                                <Setter Property="Foreground" Value="#FF6EE0C4"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
+    <Grid x:Name="RootGrid">
+        <Border Margin="18" CornerRadius="18" BorderThickness="1"
+                BorderBrush="#FF2A313A" Background="#CC111317">
+            <Grid Margin="22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="18"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="16"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-    <Grid Background="{StaticResource MatteWash}">
-        <Grid Margin="28">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="10"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="18"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="18"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+                <DockPanel LastChildFill="True">
+                    <Border x:Name="MarkHost" DockPanel.Dock="Left" Width="48" Height="48" CornerRadius="24"
+                            ClipToBounds="True" Margin="0,0,14,0"
+                            BorderBrush="#666EE0C4" BorderThickness="1"
+                            Background="#FF1E3A36"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="SIGNAL FORGE" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="#FF6EE0C4" Opacity="0.9"/>
+                        <TextBlock Text="Zwmenu" FontSize="28" FontWeight="SemiBold"
+                                   FontFamily="Segoe UI Variable Display, Segoe UI"
+                                   Margin="0,2,0,0"/>
+                        <TextBlock Opacity="0.55" FontSize="13" Margin="0,2,0,0"
+                                   Text="Матовое колесо действий. Средняя кнопка мыши в любом месте."/>
+                    </StackPanel>
+                </DockPanel>
 
-            <TextBlock Text="Zwmenu" FontSize="30" FontWeight="SemiBold"
-                       FontFamily="Segoe UI Variable Display, Segoe UI"/>
-            <TextBlock Grid.Row="2" Opacity="0.55" FontSize="13"
-                       Text="Матовое колесо действий на рабочем столе"/>
+                <Border Grid.Row="2" Height="2" CornerRadius="1" Opacity="0.55"
+                        HorizontalAlignment="Stretch" Margin="0,0,80,0">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                            <GradientStop Color="#FF6EE0C4" Offset="0"/>
+                            <GradientStop Color="#006EE0C4" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
 
-            <TextBlock Grid.Row="4" TextWrapping="Wrap" LineHeight="20" Opacity="0.9" FontSize="13.5"
-                       Text="Нажми среднюю кнопку мыши в любом месте: откроется колесо. Наведи на кнопку, чтобы увидеть, что она делает. Закрытие этого окна прячет программу в трей; хуки продолжают работать."/>
+                <TextBlock Grid.Row="4" TextWrapping="Wrap" LineHeight="21" Opacity="0.88" FontSize="13.5"
+                           Text="Наведи на сектор колеса, чтобы увидеть подсказку. Это окно можно закрыть: программа останется в трее, хуки продолжат работать."/>
 
-            <Border Grid.Row="6" Background="#FF1E1E20" CornerRadius="12" Padding="16,14"
-                    BorderBrush="#22F0EDE8" BorderThickness="1">
-                <StackPanel>
-                    <TextBlock x:Name="StatusText" FontSize="14" FontWeight="SemiBold"
-                               TextWrapping="Wrap" LineHeight="20" Text="Запуск…"/>
-                    <TextBlock x:Name="ErrorText" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12.5"
-                               LineHeight="17" Foreground="#FFD4A19A" Visibility="Collapsed"/>
-                </StackPanel>
-            </Border>
+                <Border Grid.Row="5" Margin="0,18,0,0" VerticalAlignment="Top"
+                        Background="#FF0D0F13" CornerRadius="14" Padding="16,14"
+                        BorderBrush="#FF2A313A" BorderThickness="1">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Left" Width="4" CornerRadius="2" Margin="0,2,12,2"
+                                Background="#FF6EE0C4" Opacity="0.75"/>
+                        <StackPanel>
+                            <TextBlock Text="СОСТОЯНИЕ" FontSize="10.5" FontWeight="SemiBold"
+                                       Foreground="#FF6EE0C4" Opacity="0.85" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="StatusText" FontSize="14" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" LineHeight="20" Text="Запуск…"/>
+                            <TextBlock x:Name="ErrorText" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12.5"
+                                       LineHeight="17" Foreground="#FFE7B4B0" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
 
-            <Button x:Name="SettingsButton" Grid.Row="8" Content="Настроить колесо"
-                    HorizontalAlignment="Left" Padding="16,8" Click="OnOpenSettings"
-                    Background="#FF2A2A2E" Foreground="#FFF5F0E8" BorderBrush="#33F5F0E8"
-                    Cursor="Hand"/>
-
-            <TextBlock Grid.Row="8" Margin="168,8,0,0" VerticalAlignment="Center"
-                       Opacity="0.45" FontSize="12"
-                       Text="Трей → Выход, чтобы закрыть совсем."/>
-        </Grid>
+                <DockPanel Grid.Row="6" Margin="0,18,0,0" LastChildFill="False">
+                    <Button x:Name="SettingsButton" DockPanel.Dock="Left" Content="Настроить колесо"
+                            Style="{StaticResource ForgeButton}" Click="OnOpenSettings"/>
+                    <TextBlock DockPanel.Dock="Left" Margin="16,0,0,0" VerticalAlignment="Center"
+                               Opacity="0.45" FontSize="12"
+                               Text="Трей → Выход, чтобы закрыть совсем."/>
+                </DockPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

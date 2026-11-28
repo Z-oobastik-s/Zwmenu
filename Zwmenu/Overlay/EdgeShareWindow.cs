@@ -14,7 +14,8 @@ public sealed class EdgeShareWindow : Window
     private readonly StackPanel _peers;
     private readonly StackPanel _askRow;
     private readonly System.Windows.Controls.TextBox _host;
-    private readonly System.Windows.Controls.Button _power;
+    private readonly TextBlock _powerCaption;
+    private readonly System.Windows.Controls.Border _power;
     private readonly System.Windows.Controls.RadioButton _right;
     private readonly System.Windows.Controls.RadioButton _left;
     private bool _suspend;
@@ -22,99 +23,144 @@ public sealed class EdgeShareWindow : Window
     private EdgeShareWindow()
     {
         Title = "Два экрана";
-        Width = 460;
+        Width = 480;
         SizeToContent = SizeToContent.Height;
         MaxHeight = 640;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ResizeMode = ResizeMode.NoResize;
-        Background = new SolidColorBrush(Color.FromRgb(0x16, 0x16, 0x1A));
-        Foreground = Brushes.White;
-        FontFamily = new FontFamily("Segoe UI");
+        TemplateTheme.StyleWindow(this);
 
-        var ink = Freeze(0xF5, 0xF0, 0xE8);
-        var muted = Freeze(0xC8, 0xC2, 0xB8);
-        var root = new StackPanel { Margin = new Thickness(16) };
-        root.Children.Add(new TextBlock
+        const string intro =
+            "Одна мышь на два ноутбука в одной сети. После запуска Zwmenu связь поднимается сама, подтверждение не нужно. "
+            + "В игре эта мышь крутит камеру. Убрать связь на время можно из трея. Курсор переходит через край, язык на обоих один, а буфер общий: текст, картинка и файл. "
+            + "Файл с рабочего стола или из проводника можно дотащить до края в любую сторону: у курсора на другом ноутбуке будет плюс, и файл ляжет на его рабочий стол. После этого кнопку нужно отпустить. "
+            + "Если курсор завис на втором экране, нажми Esc три раза подряд быстрее чем за две секунды: мышь вернётся. Одиночный Esc её не трогает. Закрой ShareMouse и Hamachi, иначе край перехватят они.";
+
+        _status = new TextBlock
         {
-            Text = "Одна мышь на два ноутбука в одной сети. После запуска Zwmenu связь поднимается сама, подтверждение не нужно. В игре эта мышь крутит камеру. Убрать связь на время можно из трея. Курсор переходит через край, язык на обоих один, а буфер общий: текст, картинка и файл. Файл с рабочего стола или из проводника можно дотащить до края в любую сторону: у курсора на другом ноутбуке будет плюс, и файл ляжет на его рабочий стол. После этого кнопку нужно отпустить. Если курсор завис на втором экране, нажми Esc три раза подряд быстрее чем за две секунды: мышь вернётся. Одиночный Esc её не трогает. Закрой ShareMouse и Hamachi, иначе край перехватят они.",
-            Foreground = muted,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12.5,
-            Margin = new Thickness(0, 0, 0, 12)
-        });
-        _status = new TextBlock { Foreground = ink, FontSize = 14.5, TextWrapping = TextWrapping.Wrap };
-        root.Children.Add(_status);
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+            FontSize = 13.5,
+            TextWrapping = TextWrapping.Wrap
+        };
         _prompt = new TextBlock
         {
-            Foreground = ink,
-            FontSize = 22,
+            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
+            FontSize = 20,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 10, 0, 0),
             Visibility = Visibility.Collapsed
         };
-        root.Children.Add(_prompt);
         _askRow = new StackPanel
         {
             Orientation = System.Windows.Controls.Orientation.Horizontal,
             Margin = new Thickness(0, 10, 0, 0),
             Visibility = Visibility.Collapsed
         };
-        var allow = Action("Разрешить", (_, _) => EdgeShareService.Shared.Respond(true));
-        var deny = Action("Отклонить", (_, _) => EdgeShareService.Shared.Respond(false));
-        deny.Margin = new Thickness(8, 0, 0, 0);
-        _askRow.Children.Add(allow);
-        _askRow.Children.Add(deny);
-        root.Children.Add(_askRow);
+        _askRow.Children.Add(TemplateTheme.Pill("Разрешить", () => EdgeShareService.Shared.Respond(true), accent: true));
+        _askRow.Children.Add(TemplateTheme.Pill("Отклонить", () => EdgeShareService.Shared.Respond(false)));
 
-        root.Children.Add(new TextBlock
+        var sides = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+        _right = new System.Windows.Controls.RadioButton
         {
-            Text = "Где стоит второй экран",
-            Foreground = muted,
-            Margin = new Thickness(0, 14, 0, 6),
-            FontSize = 12.5
-        });
-        var sides = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-        _right = new System.Windows.Controls.RadioButton { Content = "Справа", Foreground = ink, Margin = new Thickness(0, 0, 16, 0) };
-        _left = new System.Windows.Controls.RadioButton { Content = "Слева", Foreground = ink };
+            Content = "Справа",
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+            Margin = new Thickness(0, 0, 18, 0),
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 13,
+            Cursor = Cursors.Hand
+        };
+        _left = new System.Windows.Controls.RadioButton
+        {
+            Content = "Слева",
+            Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 13,
+            Cursor = Cursors.Hand
+        };
         _right.Checked += (_, _) => SideChanged(true);
         _left.Checked += (_, _) => SideChanged(false);
         sides.Children.Add(_right);
         sides.Children.Add(_left);
-        root.Children.Add(sides);
 
-        _peers = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
-        root.Children.Add(_peers);
+        _peers = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
-        var dial = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        var dial = new Grid { Margin = new Thickness(0, 4, 0, 0) };
         dial.ColumnDefinitions.Add(new ColumnDefinition());
         dial.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _host = new System.Windows.Controls.TextBox
-        {
-            MinHeight = 28,
-            Padding = new Thickness(6, 4, 6, 4),
-            Background = Brushes.White,
-            Foreground = Brushes.Black,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var byHost = Action("По адресу", (_, _) => EdgeShareService.Shared.ConnectHost(_host.Text));
-        byHost.Margin = new Thickness(8, 0, 0, 0);
-        Grid.SetColumn(byHost, 1);
+        _host = TemplateTheme.Field();
+        _host.MinHeight = 32;
+        _host.VerticalContentAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(_host, 0);
         dial.Children.Add(_host);
+        var byHost = TemplateTheme.Pill("По адресу", () => EdgeShareService.Shared.ConnectHost(_host.Text));
+        Grid.SetColumn(byHost, 1);
         dial.Children.Add(byHost);
-        root.Children.Add(dial);
 
-        var row = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
-        _power = Action("Включить", OnPower);
-        var forget = Action("Забыть", (_, _) => EdgeShareService.Shared.Forget());
-        forget.Margin = new Thickness(8, 0, 0, 0);
-        row.Children.Add(_power);
-        row.Children.Add(forget);
-        root.Children.Add(row);
+        _powerCaption = new TextBlock
+        {
+            Text = "Включить",
+            Foreground = TemplateTheme.Brush(TemplateTheme.AccentText),
+            FontFamily = new FontFamily(UiTheme.Current.FontUi),
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var powerFill = TemplateTheme.Brush(TemplateTheme.Accent);
+        var powerHover = TemplateTheme.Brush(TemplateTheme.AccentHover);
+        _power = new System.Windows.Controls.Border
+        {
+            Background = powerFill,
+            BorderBrush = TemplateTheme.Brush(Color.FromArgb(0x66, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerPill),
+            Padding = new Thickness(14, 7, 14, 7),
+            Margin = new Thickness(0, 0, 6, 6),
+            Cursor = Cursors.Hand,
+            Child = _powerCaption,
+            SnapsToDevicePixels = true
+        };
+        _power.MouseEnter += (_, _) => _power.Background = powerHover;
+        _power.MouseLeave += (_, _) => _power.Background = powerFill;
+        _power.MouseLeftButtonUp += (_, _) => OnPower();
 
-        Content = root;
+        var actions = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        actions.Children.Add(_power);
+        actions.Children.Add(TemplateTheme.Pill("Забыть", () => EdgeShareService.Shared.Forget()));
+
+        var body = new StackPanel();
+        body.Children.Add(ForgeChrome.BrandHead("Два экрана", "Одна мышь через край монитора"));
+        body.Children.Add(ForgeChrome.Card(new TextBlock
+        {
+            Text = intro,
+            Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12.5,
+            LineHeight = 17
+        }, new Thickness(10, 8, 10, 8)));
+
+        body.Children.Add(ForgeChrome.Section("Связь"));
+        body.Children.Add(ForgeChrome.Card(_status, new Thickness(10, 8, 10, 8)));
+        body.Children.Add(_prompt);
+        body.Children.Add(_askRow);
+
+        body.Children.Add(ForgeChrome.Section("Расположение"));
+        body.Children.Add(ForgeChrome.Card(sides, new Thickness(10, 8, 10, 8)));
+
+        body.Children.Add(ForgeChrome.Section("Узлы в сети"));
+        body.Children.Add(ForgeChrome.Card(_peers, new Thickness(10, 8, 10, 8)));
+
+        body.Children.Add(ForgeChrome.Section("Подключение"));
+        body.Children.Add(ForgeChrome.Card(dial, new Thickness(10, 6, 10, 6)));
+        body.Children.Add(actions);
+
+        var shell = ForgeChrome.Shell(TrayPaint.HiddenScroll(body), new Thickness(14, 12, 14, 10));
+        Content = shell;
+
         EdgeShareService.Shared.Changed += OnChanged;
         Closed += (_, _) => EdgeShareService.Shared.Changed -= OnChanged;
         Loaded += (_, _) => Refresh();
+        ContentRendered += (_, _) => ForgeChrome.FadeIn(shell);
     }
 
     public static void ShowCurrent()
@@ -161,7 +207,7 @@ public sealed class EdgeShareWindow : Window
         _prompt.Text = string.IsNullOrEmpty(code) ? "" : "Код " + code;
         _prompt.Visibility = string.IsNullOrEmpty(code) ? Visibility.Collapsed : Visibility.Visible;
         _askRow.Visibility = link.Pending == null ? Visibility.Collapsed : Visibility.Visible;
-        _power.Content = link.Running ? "Выключить" : "Включить";
+        _powerCaption.Text = link.Running ? "Выключить" : "Включить";
 
         _suspend = true;
         _right.IsChecked = link.PeerOnRight;
@@ -177,9 +223,10 @@ public sealed class EdgeShareWindow : Window
             _peers.Children.Add(new TextBlock
             {
                 Text = "Второго ноутбука пока не видно. Включи «Два экрана» и на нём. Если Windows спросит брандмауэр, разреши частную сеть. Или впиши его адрес ниже.",
-                Foreground = Freeze(0xC8, 0xC2, 0xB8),
+                Foreground = TemplateTheme.Brush(TemplateTheme.FgDim),
                 TextWrapping = TextWrapping.Wrap,
-                FontSize = 12.5
+                FontSize = 12.5,
+                LineHeight = 17
             });
             return;
         }
@@ -192,10 +239,11 @@ public sealed class EdgeShareWindow : Window
             line.Children.Add(new TextBlock
             {
                 Text = peer.Name + "   " + peer.Host,
-                Foreground = Freeze(0xF5, 0xF0, 0xE8),
-                VerticalAlignment = System.Windows.VerticalAlignment.Center
+                Foreground = TemplateTheme.Brush(TemplateTheme.Fg),
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 13
             });
-            var button = Action("Подключить", (_, _) => EdgeShareService.Shared.ConnectPeer(peer));
+            var button = TemplateTheme.Pill("Подключить", () => EdgeShareService.Shared.ConnectPeer(peer));
             Grid.SetColumn(button, 1);
             line.Children.Add(button);
             _peers.Children.Add(line);
@@ -209,52 +257,11 @@ public sealed class EdgeShareWindow : Window
         EdgeShareService.Shared.SetPeerOnRight(onRight);
     }
 
-    private void OnPower(object sender, RoutedEventArgs e)
+    private void OnPower()
     {
         if (EdgeShareService.Shared.Running)
             EdgeShareService.Shared.Stop();
         else
             EdgeShareService.Shared.Start();
-    }
-
-    private static System.Windows.Controls.Button Action(string caption, RoutedEventHandler click)
-    {
-        var button = new System.Windows.Controls.Button
-        {
-            Content = caption,
-            MinWidth = 110,
-            Height = 32,
-            Padding = new Thickness(12, 4, 12, 4),
-            Foreground = Freeze(0xF5, 0xF0, 0xE8),
-            Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x30)),
-            BorderThickness = new Thickness(0),
-            Cursor = Cursors.Hand,
-            Style = Flat()
-        };
-        button.Click += click;
-        return button;
-    }
-
-    private static Style Flat()
-    {
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
-        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(System.Windows.Controls.Control.BackgroundProperty));
-        border.SetValue(Border.PaddingProperty, new TemplateBindingExtension(System.Windows.Controls.Control.PaddingProperty));
-        var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
-        presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Center);
-        presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-        border.AppendChild(presenter);
-        return new Style(typeof(System.Windows.Controls.Button))
-        {
-            Setters = { new Setter(System.Windows.Controls.Control.TemplateProperty, new ControlTemplate(typeof(System.Windows.Controls.Button)) { VisualTree = border }) }
-        };
-    }
-
-    private static SolidColorBrush Freeze(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
     }
 }

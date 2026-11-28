@@ -46,6 +46,20 @@ public partial class App: Application
             return;
         }
 
+        if (e.Args.Any(a => string.Equals(a, "--ui-preview", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            UiSurfacePreview.Run();
+            return;
+        }
+
+        if (e.Args.Any(a => string.Equals(a, "--flyout-preview", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            FlyoutPreview.Run();
+            return;
+        }
+
         if (e.Args.Any(a => string.Equals(a, "--selfcheck", StringComparison.OrdinalIgnoreCase)))
         {
             string report = Path.Combine(Path.GetTempPath(), "zwmenu-selfcheck.txt");
@@ -135,12 +149,8 @@ public partial class App: Application
         _launcher.ClipStateChanged += phase => _tray?.SetClipPhase(phase);
         _launcher.Start();
 
-        // Без окна на старте: сразу в трей, статус открывается из трея.
+        // Без окна на старте: сразу в трей. MainWindow создаём при первом открытии статуса.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-        _window = new MainWindow(_launcher);
-        _window.Closing += OnMainWindowClosing;
-        _window.SettingsRequested += (_, _) => ShowSettings();
 
         _tray = new TrayIconService();
         _tray.ShowRequested += (_, _) => ShowMainWindow();
@@ -148,25 +158,28 @@ public partial class App: Application
         _tray.ExitRequested += (_, _) => ExitApp();
         _tray.Show();
 
-        // Речевые модели грузятся при первой диктовке, не на старте.
-        _workoutReminder = new WorkoutReminderService();
         EdgeShareService.Shared.Changed += () =>
         {
             if (EdgeShareService.Shared.Pending != null)
                 Dispatcher.BeginInvoke(EdgeShareWindow.ShowCurrent);
         };
-        EdgeShareService.Shared.Start();
-        DiskSweep.Soon();
-        PrintPeer.StartServer();
-        PhotoOpen.StartServer();
-        PhotoOpen.OpenFromArgs(e.Args);
-        VideoOpen.StartServer();
-        VideoOpen.OpenFromArgs(e.Args);
-        MusicOpen.StartServer();
-        MusicOpen.OpenFromArgs(e.Args);
-        try { VoiceShiftLive.Shared.Restore(); }
-        catch { /* окно голоса покажет, если микрофон не открылся */ }
-        StayAwake.Start();
+
+        // Открытие файла из проводника: серверы сразу. Иначе поднимем их ступенью BootPace.
+        bool openMedia = e.Args.Any(a =>
+            string.Equals(a, "--photo", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(a, "--video", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(a, "--music", StringComparison.OrdinalIgnoreCase));
+        if (openMedia)
+        {
+            PrintPeer.StartServer();
+            PhotoOpen.StartServer();
+            VideoOpen.StartServer();
+            MusicOpen.StartServer();
+            PhotoOpen.OpenFromArgs(e.Args);
+            VideoOpen.OpenFromArgs(e.Args);
+            MusicOpen.OpenFromArgs(e.Args);
+        }
+
         UpdateWindow.ExitForUpdate = () =>
         {
             try { _settings?.CloseForExit(); } catch { /* окно настроек уже закрыто */ }
@@ -179,20 +192,50 @@ public partial class App: Application
             Dispatcher.BeginInvoke(() =>
                 UpdateWindow.ShowNote("Обновление не поставилось. Файлы не скопировались. Попробуй снова или поставь полный установщик с GitHub."));
         }
-        var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
-        updateTimer.Tick += (_, _) =>
-        {
-            updateTimer.Stop();
-            AppUpdate.CheckSoon(manual: false);
-        };
-        updateTimer.Start();
-        var setupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        setupTimer.Tick += (_, _) =>
-        {
-            setupTimer.Stop();
-            SetupOffer.CheckSoon();
-        };
-        setupTimer.Start();
+
+        // Ступени: после перезагрузки ПК паузы длиннее (BootPace.SoftLogin).
+        BootPace.Schedule(Dispatcher,
+            (1.2, 3.5, () =>
+            {
+                _launcher?.WarmGameFocus();
+                StayAwake.Start();
+            }),
+            (2.5, 7.0, () =>
+            {
+                try { ShelfWindow.Restore(); } catch { /* полка поднимется из настроек */ }
+            }),
+            (4.0, 12.0, () => _launcher?.BeginWarmup()),
+            (6.0, 16.0, () =>
+            {
+                if (!openMedia)
+                {
+                    PrintPeer.StartServer();
+                    PhotoOpen.StartServer();
+                    VideoOpen.StartServer();
+                    MusicOpen.StartServer();
+                }
+
+                EdgeShareService.Shared.Start();
+            }),
+            (8.0, 22.0, () =>
+            {
+                _workoutReminder ??= new WorkoutReminderService();
+            }),
+            (10.0, 28.0, () =>
+            {
+                _ = BootPace.RunLowAsync(DiskSweep.Run);
+            }),
+            (12.0, 32.0, () =>
+            {
+                try { VoiceShiftLive.Shared.Restore(); }
+                catch { /* окно голоса покажет, если микрофон не открылся */ }
+            }),
+            (14.0, 36.0, () => SetupOffer.CheckSoon()),
+            (18.0, 48.0, () =>
+            {
+                AppUpdate.CheckSoon(manual: false);
+                BootPace.TrimWorkingSet();
+            }));
     }
 
     private void ShowPathFix(ActionProblem problem)
@@ -255,8 +298,15 @@ public partial class App: Application
 
     private void ShowMainWindow()
     {
-        if (_window == null)
+        if (_launcher == null)
             return;
+
+        if (_window == null)
+        {
+            _window = new MainWindow(_launcher);
+            _window.Closing += OnMainWindowClosing;
+            _window.SettingsRequested += (_, _) => ShowSettings();
+        }
 
         _window.Show();
         _window.Activate();
@@ -311,6 +361,7 @@ public partial class App: Application
         }
 
         _exiting = true;
+        BootPace.CancelAll();
         VoiceShiftLive.Shared.StopForExit();
         PrintPeer.StopServer();
         PhotoOpen.StopServer();
@@ -321,6 +372,7 @@ public partial class App: Application
         _workoutReminder?.Dispose();
         _launcher?.Dispose();
         _tray?.Dispose();
+        try { StayAwake.SetManual(false); } catch { /* необязательно */ }
 
         if (_window != null)
         {

@@ -88,8 +88,7 @@ public sealed class LauncherService: IDisposable
         _middleHoldTimer.Tick += OnMiddleHoldTick;
 
         _dictation = new DictationService(_dispatcher);
-        GameFocus.Warm();
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ShelfWindow.Restore));
+        // GameFocus и полка: после BootPace, не в конструкторе (холодный вход в Windows).
         ApplyMiddleClickSettings();
         _mouse.MiddleDown += OnMiddleDown;
         _mouse.MiddleUp += OnMiddleUp;
@@ -191,7 +190,7 @@ public sealed class LauncherService: IDisposable
 
         StatusChanged?.Invoke(this, EventArgs.Empty);
 
-        // Прогрев UI на старте, чтобы первый СКМ не строил окно с нуля.
+        // Конвертер хоткеев лёгкий. Тяжёлый прогрев колеса: BeginWarmup через BootPace.
         if (MouseHookOk && KeyboardHookOk)
         {
             _fileConvert = new FileConvertHotkeyService(
@@ -199,8 +198,26 @@ public sealed class LauncherService: IDisposable
                 _mouse,
                 _dispatcher,
                 () => _menu is { IsVisible: true } || _shot != null || _shotOpening);
-            _ = WarmupAsync();
         }
+    }
+
+    /// <summary>Отложенный прогрев иконок и окна колеса. Вызывать со ступени BootPace.</summary>
+    public void BeginWarmup()
+    {
+        if (_disposed || _warming || _warmReady)
+            return;
+        if (!(MouseHookOk && KeyboardHookOk))
+        {
+            _warmReady = true;
+            return;
+        }
+
+        _ = WarmupAsync();
+    }
+
+    public void WarmGameFocus()
+    {
+        try { GameFocus.Warm(); } catch { /* фокус игры необязателен на старте */ }
     }
 
     /// <summary>
@@ -212,7 +229,7 @@ public sealed class LauncherService: IDisposable
         var actions = _actions;
         try
         {
-            await Task.Run(() =>
+            await BootPace.RunLowAsync(() =>
             {
                 MenuStore.PrepareIcons(actions);
                 try { ProcessKillService.Snapshot(42); } catch { /* список процессов необязателен */ }
@@ -257,6 +274,8 @@ public sealed class LauncherService: IDisposable
         if (_pendingOpen is { } pending)
         {
             _pendingOpen = null;
+            if (GameFocus.IsPlaying(fresh: true))
+                return;
             try { OpenMenu(pending.X, pending.Y); }
             catch (Exception ex)
             {
@@ -265,9 +284,10 @@ public sealed class LauncherService: IDisposable
         }
 
         // Кодировщик нужен только к записи. Модель фона поднимается в момент «Фон».
+        double encDelay = BootPace.SoftLogin ? 45 : 18;
         _ = Task.Run(async () =>
         {
-            try { await Task.Delay(12000).ConfigureAwait(false); } catch { return; }
+            try { await Task.Delay(TimeSpan.FromSeconds(encDelay)).ConfigureAwait(false); } catch { return; }
             if (_disposed)
                 return;
             try { await _clip.PrepareEncoderAsync().ConfigureAwait(false); } catch { /* нет сети или ffmpeg */ }
@@ -424,19 +444,24 @@ public sealed class LauncherService: IDisposable
     {
         if (_opening)
             return;
+        // Снимок поверх колеса: клики рамки не должны закрывать круг.
+        if (_shot != null || _shotOpening)
+            return;
         if (_menu is not { IsVisible: true })
             return;
 
         _dispatcher.BeginInvoke(() =>
         {
-            if (_opening || _menu is not { IsVisible: true })
+            if (_opening || _shot != null || _shotOpening)
+                return;
+            if (_menu is not { IsVisible: true } menu)
                 return;
 
             try
             {
-                var screen = new Point(pt.X, pt.Y);
-                var relative = _menu.PointFromScreen(screen);
-                if (relative.X < 0 || relative.Y < 0 || relative.X > _menu.ActualWidth || relative.Y > _menu.ActualHeight)
+                // Прозрачные дыры HWND огромные: клик «мимо диска» всё равно внутри окна.
+                // Закрываем, если попадание не в кольцо, кнопки или выезд.
+                if (!menu.HitsKeepAlive(pt.X, pt.Y))
                     CloseMenu();
             }
             catch
@@ -485,9 +510,19 @@ public sealed class LauncherService: IDisposable
             if (_shot != null || _shotOpening)
                 return;
 
+            // Запасная проверка: хук уже пропускает СКМ в игре, но отложенный прогрев не должен открыть колесо поверх.
+            if (GameFocus.IsPlaying(fresh: true))
+            {
+                _pendingOpen = null;
+                return;
+            }
+
             if (_warming || !_warmReady)
             {
                 _pendingOpen = (screenX, screenY);
+                // Первый СКМ до ступени BootPace: прогреваем сразу, без ожидания таймера.
+                if (!_warming)
+                    BeginWarmup();
                 return;
             }
 
@@ -795,7 +830,7 @@ public sealed class LauncherService: IDisposable
             return;
         }
 
-        CloseMenu();
+        // Колесо оставляем: можно снять сам круг. Закрываем только чужие попапы.
         _fileConvert?.ClosePopup();
 
         var screen = PickScreenshotScreen(ScreenshotStore.Current);
@@ -803,7 +838,7 @@ public sealed class LauncherService: IDisposable
         var bounds = screen.Bounds;
         string device = screen.DeviceName;
 
-        // Кадр после Hide колеса: снимок не захватывает ни меню, ни рамку выделения.
+        // Кадр на следующем idle: круг уже отрисован, рамка выделения ещё не поверх.
         _dispatcher.BeginInvoke(() =>
         {
             if (_disposed || _shot != null || _shotCancel)

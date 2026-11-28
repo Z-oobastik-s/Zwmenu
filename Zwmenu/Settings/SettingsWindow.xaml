@@ -3,27 +3,27 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:settings="clr-namespace:Zwmenu.Settings"
         Title="Zwmenu: настройки"
-        Width="960" Height="640"
-        MinWidth="760" MinHeight="480"
+        Width="1040" Height="680"
+        MinWidth="820" MinHeight="520"
         WindowStartupLocation="Manual"
-        Background="#FF141416"
-        Foreground="#FFF5F0E8"
+        Background="#FF08090B"
+        Foreground="#FFECEFF3"
         FontFamily="Segoe UI Variable Text, Segoe UI">
     <Window.Resources>
         <settings:ColorStringConverter x:Key="TintBrush"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF1A1A1C"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFF5F0E8"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FF3A3A40"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF5F0E8"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF111317"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFECEFF3"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FF2A3A42"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFECEFF3"/>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#FF1A1A1E"/>
-            <Setter Property="Foreground" Value="#FFF5F0E8"/>
-            <Setter Property="BorderBrush" Value="#22F5F0E8"/>
+            <Setter Property="Background" Value="#FF0D0F13"/>
+            <Setter Property="Foreground" Value="#FFECEFF3"/>
+            <Setter Property="BorderBrush" Value="#FF2A313A"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,9"/>
-            <Setter Property="CaretBrush" Value="#FFF5F0E8"/>
-            <Setter Property="SelectionBrush" Value="#FF3E5A6E"/>
+            <Setter Property="CaretBrush" Value="#FFECEFF3"/>
+            <Setter Property="SelectionBrush" Value="#FF1E3A36"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -32,9 +32,9 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8">
+                                CornerRadius="10">
                             <ScrollViewer x:Name="PART_ContentHost"
-                                          Background="#FF1A1A1E"
+                                          Background="#FF0D0F13"
                                           Margin="{TemplateBinding Padding}"
                                           Focusable="False"
                                           HorizontalScrollBarVisibility="Disabled"
@@ -42,7 +42,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#66A8C5A0"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#666EE0C4"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.45"/>
@@ -154,9 +154,9 @@
             </Setter>
         </Style>
         <Style TargetType="Button">
-            <Setter Property="Background" Value="#FF2A2A2E"/>
-            <Setter Property="Foreground" Value="#FFF5F0E8"/>
-            <Setter Property="BorderBrush" Value="#33F5F0E8"/>
+            <Setter Property="Background" Value="#FF1C2128"/>
+            <Setter Property="Foreground" Value="#FFECEFF3"/>
+            <Setter Property="BorderBrush" Value="#FF2A313A"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,7"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -166,15 +166,15 @@
                         <Border x:Name="Bd" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FF34343A"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#FF28303A"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FF3E3E44"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#FF1E3A36"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4"/>
@@ -185,40 +185,44 @@
             </Setter>
         </Style>
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="#FF3E5A6E"/>
-            <Setter Property="BorderBrush" Value="#553E5A6E"/>
+            <Setter Property="Background" Value="#FF1E3A36"/>
+            <Setter Property="Foreground" Value="#FF6EE0C4"/>
+            <Setter Property="BorderBrush" Value="#666EE0C4"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FF4A6A80"/>
+                    <Setter Property="Background" Value="#FF2A4C46"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="MinWidth" Value="128"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Padding" Value="14,11"/>
             <Setter Property="FontSize" Value="13.5"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
         <Style TargetType="ListBox">
-            <Setter Property="Background" Value="#FF161618"/>
-            <Setter Property="Foreground" Value="#FFF5F0E8"/>
-            <Setter Property="BorderBrush" Value="#22F5F0E8"/>
+            <Setter Property="Background" Value="#FF0D0F13"/>
+            <Setter Property="Foreground" Value="#FFECEFF3"/>
+            <Setter Property="BorderBrush" Value="#FF2A313A"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBox">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
+                                CornerRadius="12">
                             <ScrollViewer Focusable="False"
-                                          Background="#FF161618"
+                                          Background="#FF0D0F13"
                                           Padding="{TemplateBinding Padding}"
                                           HorizontalScrollBarVisibility="Disabled"
-                                          VerticalScrollBarVisibility="Auto">
+                                          VerticalScrollBarVisibility="Hidden">
                                 <ItemsPresenter/>
                             </ScrollViewer>
                         </Border>
@@ -240,10 +244,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FF242428"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#FF1C2128"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#FF323238"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#FF1E3A36"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -252,27 +256,47 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="18">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Grid x:Name="RootGrid">
+        <Grid Margin="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="212"/>
+                <ColumnDefinition Width="14"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-        <StackPanel>
-            <TextBlock Text="Настройки" FontSize="22" FontWeight="SemiBold"
-                       FontFamily="Segoe UI Variable Display, Segoe UI"/>
-            <TextBlock x:Name="PageHint" Margin="0,4,0,0" Opacity="0.65" FontSize="13" TextWrapping="Wrap"
-                       Text="Пункты колеса. Первый — в центре, остальные сверху по часовой."/>
-            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                <Button x:Name="NavWheel" Style="{StaticResource NavButton}" Content="Колесо" Click="OnNavWheel"/>
-                <Button x:Name="NavBehavior" Style="{StaticResource NavButton}" Content="Поведение" Click="OnNavBehavior"/>
-                <Button x:Name="NavShot" Style="{StaticResource NavButton}" Content="Скриншот" Click="OnNavShot"/>
-                <Button x:Name="NavShelf" Style="{StaticResource NavButton}" Content="Полка" Click="OnNavShelf"/>
-            </StackPanel>
-        </StackPanel>
+            <Border Background="#E6111317" CornerRadius="16" BorderBrush="#FF2A313A" BorderThickness="1" Padding="14,16">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+                        <DockPanel LastChildFill="True" Margin="0,0,0,14">
+                            <Border x:Name="MarkHost" DockPanel.Dock="Left" Width="36" Height="36" CornerRadius="18"
+                                    ClipToBounds="True" Margin="0,0,10,0"
+                                    BorderBrush="#666EE0C4" BorderThickness="1"
+                                    Background="#FF1E3A36"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="SIGNAL FORGE" FontSize="10" FontWeight="SemiBold" Foreground="#FF6EE0C4"/>
+                                <TextBlock Text="Настройки" FontSize="18" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <TextBlock x:Name="PageHint" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                   Text="Пункты колеса. Первый в центре, остальные сверху по часовой."/>
+                    </StackPanel>
+                    <StackPanel>
+                        <Button x:Name="NavWheel" Style="{StaticResource NavButton}" Content="Колесо" Click="OnNavWheel"/>
+                        <Button x:Name="NavBehavior" Style="{StaticResource NavButton}" Content="Поведение" Click="OnNavBehavior"/>
+                        <Button x:Name="NavShot" Style="{StaticResource NavButton}" Content="Скриншот" Click="OnNavShot"/>
+                        <Button x:Name="NavShelf" Style="{StaticResource NavButton}" Content="Полка" Click="OnNavShelf"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
 
-        <Grid Grid.Row="1" Margin="0,14,0,12">
+            <Border Grid.Column="2" Background="#CC111317" CornerRadius="16"
+                    BorderBrush="#FF2A313A" BorderThickness="1" Padding="18,16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+        <Grid Grid.Row="0">
             <Grid x:Name="PageWheel">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="280" MinWidth="220"/>
@@ -314,7 +338,7 @@
                          BorderThickness="1" Padding="6"
                          SelectionChanged="OnSelectionChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                         ScrollViewer.VerticalScrollBarVisibility="Hidden">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -380,7 +404,7 @@
             </DockPanel>
 
             <ScrollViewer Grid.Column="2" Background="Transparent"
-                          VerticalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Hidden"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel x:Name="Editor" IsEnabled="False">
                     <Border x:Name="ChildEditBanner" Margin="0,0,0,12" Padding="12,10" CornerRadius="10"
@@ -472,7 +496,7 @@
                                  BorderBrush="#22F5F0E8" BorderThickness="1"
                                  SelectionChanged="OnChildSelected"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                 ScrollViewer.VerticalScrollBarVisibility="Hidden">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
@@ -523,7 +547,7 @@
             </Grid>
 
             <ScrollViewer x:Name="PageBehavior" Visibility="Collapsed"
-                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                          VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel MaxWidth="680" HorizontalAlignment="Left">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                         <Button x:Name="BehNavRun" Style="{StaticResource NavButton}" Content="Запуск" Tag="run" Click="OnBehSection"/>
@@ -666,32 +690,59 @@
 
                     </StackPanel>
 
-                    <StackPanel x:Name="BehLook" Visibility="Collapsed">
-                    <TextBlock Text="Вид круга" FontSize="16" FontWeight="SemiBold"/>
-                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Двенадцать видов круга. Иконки садятся в цвет темы. Открой колесо колёсиком."/>
-                    <UniformGrid x:Name="RingLookGrid" Columns="5" Margin="0,0,0,8" HorizontalAlignment="Left" Width="540"/>
-                    <TextBlock x:Name="RingLookHint" Margin="0,0,0,10" Opacity="0.7" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Тёмный графит, кремовая кромка и мелкая шкала."/>
-                    <Border Background="#FF1A1A1E" CornerRadius="14" Padding="8" HorizontalAlignment="Left" Width="320" Height="236">
-                        <Canvas x:Name="RingLookPreview" Width="304" Height="220" ClipToBounds="True"/>
-                    </Border>
+                    <Grid x:Name="BehLook" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="360"/>
+                            <ColumnDefinition Width="18"/>
+                            <ColumnDefinition Width="300"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Вид круга" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,8" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                       Text="Двенадцать видов. Иконки берут цвет темы."/>
+                            <UniformGrid x:Name="RingLookGrid" Columns="3" HorizontalAlignment="Left" Width="348"/>
+                            <TextBlock x:Name="RingLookHint" Margin="0,6,0,14" Opacity="0.7" FontSize="12" TextWrapping="Wrap"
+                                       Text="Ночной графит и мятный сигнал."/>
 
-                    <TextBlock Text="Перевод буфера" Margin="0,22,0,0" FontSize="16" FontWeight="SemiBold"/>
-                    <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Обычное копирование ничего не переводит. По умолчанию F10, или сектор «Перевод» на колесе, читает буфер и предлагает: по-русски или как есть. Если текст уже русский, перевода нет. Буфер меняется только после нажатия кнопки."/>
-                    <DockPanel LastChildFill="True">
-                        <Button x:Name="TranslateHotkeyAssign" DockPanel.Dock="Right" Content="Назначить"
-                                MinWidth="120" Margin="8,0,0,0" Click="OnTranslateHotkeyAssign"/>
-                        <ComboBox x:Name="TranslateHotkeyCombo" MinWidth="180" HorizontalAlignment="Left"
-                                  SelectionChanged="OnTranslateHotkeyChanged"/>
-                    </DockPanel>
-                    </StackPanel>
+                            <TextBlock Text="Тема окон" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,8" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                       Text="Панели, пульт, трей. Колесо остаётся своим видом."/>
+                            <UniformGrid x:Name="UiSkinGrid" Columns="2" HorizontalAlignment="Left" Width="348"/>
+                            <TextBlock x:Name="UiSkinHint" Margin="0,6,0,8" Opacity="0.7" FontSize="12" TextWrapping="Wrap"
+                                       Text="Ночной графит и мятный сигнал."/>
+                            <CheckBox x:Name="UiSkinFollowBox" Foreground="#FFF5F0E8" FontSize="13"
+                                      Content="Тема окон следует за видом круга"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <Border Background="#FF111317" BorderBrush="#FF2A313A" BorderThickness="1"
+                                    CornerRadius="14" Padding="6" HorizontalAlignment="Left" Width="280" Height="168">
+                                <Canvas x:Name="RingLookPreview" Width="268" Height="156" ClipToBounds="True"/>
+                            </Border>
+                            <TextBlock Text="Форма выезда" Margin="0,12,0,0" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,8" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                       Text="Одна на игры, папки и процессы. Пульт всегда стык."/>
+                            <WrapPanel x:Name="FlyoutStyleGrid" Width="280" HorizontalAlignment="Left"/>
+                            <TextBlock x:Name="FlyoutStyleHint" Margin="0,4,0,12" Opacity="0.75" FontSize="12" TextWrapping="Wrap"
+                                       Text="Ровная колонка у кнопки."/>
+                            <UniformGrid x:Name="FlyoutMotionGrid" Visibility="Collapsed" Columns="2"/>
+                            <TextBlock x:Name="FlyoutMotionHint" Visibility="Collapsed"/>
+
+                            <TextBlock Text="Перевод буфера" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,8" Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                       Text="F10 или сектор «Перевод». Буфер меняется только после кнопки."/>
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox x:Name="TranslateHotkeyCombo" Width="148"
+                                          SelectionChanged="OnTranslateHotkeyChanged"/>
+                                <Button x:Name="TranslateHotkeyAssign" Content="Назначить"
+                                        Width="96" Margin="8,0,0,0" Click="OnTranslateHotkeyAssign"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
             </ScrollViewer>
 
             <ScrollViewer x:Name="PageShot" Visibility="Collapsed"
-                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                          VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel MaxWidth="560" HorizontalAlignment="Left">
                     <TextBlock Text="Клавиша" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Margin="0,4,0,8" Opacity="0.6" FontSize="12.5" TextWrapping="Wrap"
@@ -764,7 +815,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,8,8">
                         <Border Background="#FF1A1A1E" BorderBrush="#22F5F0E8" BorderThickness="1"
                                 CornerRadius="12" Padding="16,14" Margin="0,0,0,12">
@@ -973,7 +1024,7 @@
             </Grid>
         </Grid>
 
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1" Margin="0,14,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -987,6 +1038,9 @@
                 <Button x:Name="RevealFileButton" Content="Показать файл" Margin="0,0,8,0" Click="OnReveal"/>
                 <Button Content="Сохранить" Style="{StaticResource PrimaryButton}" MinWidth="120" Click="OnSaveClick"/>
             </StackPanel>
+        </Grid>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </Window>

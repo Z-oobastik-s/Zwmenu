@@ -3,27 +3,37 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using Zwmenu.Services;
 
 namespace Zwmenu.Overlay;
 
-/// <summary>Цвета и кнопки как в Program Text Buffer: тёмный фон, пилюли, без «дефолтного» WPF.</summary>
+/// <summary>
+/// ????? ?????????? ???? ????. ????? ?? UiTheme.Current (Signal Forge ? ??.).
+/// ??? ??????? ?????: i3 ? ?????? GPU ?? ?????? ??????????.
+/// </summary>
 static class TemplateTheme
 {
-    public static readonly Color BgDeep = Color.FromRgb(0x07, 0x07, 0x08);
-    public static readonly Color BgPanel = Color.FromRgb(0x12, 0x12, 0x13);
-    public static readonly Color BgTitle = Color.FromRgb(0x0D, 0x0D, 0x0E);
-    public static readonly Color Fg = Color.FromRgb(0xF0, 0xF0, 0xF0);
-    public static readonly Color FgDim = Color.FromRgb(0x7A, 0x7A, 0x7A);
-    public static readonly Color Border = Color.FromRgb(0x2C, 0x2C, 0x2E);
-    public static readonly Color ListBg = Color.FromRgb(0x0E, 0x0E, 0x10);
-    public static readonly Color ListSel = Color.FromRgb(0x3F, 0x3F, 0x42);
-    public static readonly Color BtnBg = Color.FromRgb(0x24, 0x24, 0x26);
-    public static readonly Color BtnHover = Color.FromRgb(0x32, 0x32, 0x34);
-    public static readonly Color Accent = Color.FromRgb(0x3A, 0x3A, 0x40);
-    public static readonly Color AccentHover = Color.FromRgb(0x48, 0x48, 0x4F);
-    public static readonly Color AccentSoft = Color.FromRgb(0x1A, 0x2E, 0x2A);
-    public static readonly Color AccentText = Color.FromRgb(0x7D, 0xD4, 0xC0);
-    public static readonly Color GiveAccent = Color.FromRgb(0x3D, 0x9F, 0x88);
+    public static Color BgDeep => UiTheme.Current.BgDeep;
+    public static Color BgPanel => UiTheme.Current.BgPanel;
+    public static Color BgTitle => UiTheme.Current.BgTitle;
+    public static Color Fg => UiTheme.Current.Fg;
+    public static Color FgDim => UiTheme.Current.FgDim;
+    public static Color Border => UiTheme.Current.Border;
+    public static Color ListBg => UiTheme.Current.ListBg;
+    public static Color ListSel => UiTheme.Current.ListSel;
+    public static Color BtnBg => UiTheme.Current.BtnBg;
+    public static Color BtnHover => UiTheme.Current.BtnHover;
+    public static Color Accent => UiTheme.Current.Accent;
+    public static Color AccentHover => UiTheme.Current.AccentHover;
+    public static Color AccentSoft => UiTheme.Current.AccentSoft;
+    public static Color AccentText => UiTheme.Current.AccentText;
+    public static Color Danger => UiTheme.Current.Danger;
+    public static Color DangerHover => UiTheme.Current.DangerHover;
+    public static Color StatusOk => UiTheme.Current.StatusOk;
+    public static Color StatusWarn => UiTheme.Current.StatusWarn;
+    public static Color GiveAccent => AccentText;
+
+    static FontFamily UiFont => new(UiTheme.Current.FontUi);
 
     public static SolidColorBrush Brush(Color c)
     {
@@ -46,33 +56,38 @@ static class TemplateTheme
             BorderBrush = Brush(Border),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8, 5, 8, 5),
-            FontFamily = new FontFamily("Segoe UI"),
+            FontFamily = UiFont,
             FontSize = 12,
             HasDropShadow = false
         };
     }
 
-    public static Border Pill(string text, Action click, bool accent = false, bool danger = false, string? hint = null)
+    public static System.Windows.Controls.Border Pill(string text, Action click, bool accent = false, bool danger = false, string? hint = null)
     {
-        var fill = accent ? Accent : (danger ? Color.FromRgb(0x3A, 0x22, 0x24) : BtnBg);
-        var hover = accent ? AccentHover : (danger ? Color.FromRgb(0x52, 0x2C, 0x30) : BtnHover);
-        var borderColor = accent || danger ? Color.FromRgb(0xC8, 0xC8, 0xC8) : Border;
+        var fill = accent ? Accent : (danger ? Danger : BtnBg);
+        var hover = accent ? AccentHover : (danger ? DangerHover : BtnHover);
+        var fg = accent ? AccentText : Fg;
+        var borderColor = accent
+            ? Color.FromArgb(0x66, AccentText.R, AccentText.G, AccentText.B)
+            : danger
+                ? Color.FromArgb(0x88, 0xC8, 0x90, 0x90)
+                : Border;
         var label = new TextBlock
         {
             Text = text,
-            Foreground = Brush(Fg),
-            FontFamily = new FontFamily("Segoe UI"),
+            Foreground = Brush(fg),
+            FontFamily = UiFont,
             FontSize = 12,
             FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-            VerticalAlignment = System.Windows.VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center
         };
-        var border = new Border
+        var border = new System.Windows.Controls.Border
         {
             Background = Brush(fill),
             BorderBrush = Brush(borderColor),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerPill),
             Padding = new Thickness(14, 7, 14, 7),
             Margin = new Thickness(0, 0, 6, 6),
             Cursor = System.Windows.Input.Cursors.Hand,
@@ -83,11 +98,83 @@ static class TemplateTheme
         border.MouseLeave += (_, _) => border.Background = Brush(fill);
         border.MouseLeftButtonUp += (_, _) =>
         {
-            try { click(); } catch { /* кнопка не валит окно */ }
+            try { click(); } catch { /* ?????? ?? ????? ???? */ }
         };
         if (!string.IsNullOrWhiteSpace(hint))
             Hint(border, hint);
         return border;
+    }
+
+    public static System.Windows.Controls.Border Frame(UIElement content, Thickness? padding = null, double? radius = null)
+    {
+        return new System.Windows.Controls.Border
+        {
+            Background = Brush(BgPanel),
+            BorderBrush = Brush(Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(radius ?? UiTheme.Current.CornerPanel),
+            Padding = padding ?? new Thickness(10),
+            Child = content,
+            SnapsToDevicePixels = true
+        };
+    }
+
+    public static System.Windows.Controls.Border TitleBar(string title, MouseButtonEventHandler? drag = null)
+    {
+        var row = new DockPanel { LastChildFill = true };
+        var mark = new System.Windows.Controls.Border
+        {
+            Width = 3,
+            Margin = new Thickness(0, 2, 8, 2),
+            Background = Brush(AccentText),
+            CornerRadius = new CornerRadius(1.5),
+            Opacity = 0.9
+        };
+        DockPanel.SetDock(mark, Dock.Left);
+        row.Children.Add(mark);
+        row.Children.Add(new TextBlock
+        {
+            Text = title,
+            Foreground = Brush(Fg),
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontFamily = UiFont
+        });
+
+        var bar = new System.Windows.Controls.Border
+        {
+            Background = Brush(BgTitle),
+            BorderBrush = Brush(Border),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(10, 8, 10, 8),
+            Child = row,
+            Cursor = Cursors.SizeAll,
+            SnapsToDevicePixels = true
+        };
+        if (drag != null)
+            bar.MouseLeftButtonDown += drag;
+        return bar;
+    }
+
+    public static System.Windows.Controls.Border Chip(string text, bool soft = false)
+    {
+        return new System.Windows.Controls.Border
+        {
+            Background = Brush(soft ? AccentSoft : BtnBg),
+            BorderBrush = Brush(Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(UiTheme.Current.CornerChip),
+            Padding = new Thickness(8, 3, 8, 3),
+            Child = new TextBlock
+            {
+                Text = text,
+                Foreground = Brush(soft ? AccentText : FgDim),
+                FontSize = 11,
+                FontFamily = UiFont
+            },
+            SnapsToDevicePixels = true
+        };
     }
 
     public static System.Windows.Controls.TextBox Field(bool multi = false)
@@ -100,14 +187,14 @@ static class TemplateTheme
             BorderBrush = Brush(Border),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(10, 7, 10, 7),
-            FontFamily = new FontFamily("Segoe UI"),
+            FontFamily = UiFont,
             FontSize = 13
         };
         if (multi)
         {
             box.AcceptsReturn = true;
             box.TextWrapping = TextWrapping.Wrap;
-            box.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            box.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
         }
         return box;
     }
@@ -118,7 +205,7 @@ static class TemplateTheme
         {
             Content = text,
             Foreground = Brush(Fg),
-            FontFamily = new FontFamily("Segoe UI"),
+            FontFamily = UiFont,
             FontSize = 13,
             Cursor = Cursors.Hand,
             FocusVisualStyle = null
@@ -138,7 +225,7 @@ static class TemplateTheme
         var glyph = new FrameworkElementFactory(typeof(TextBlock));
         glyph.SetValue(TextBlock.TextProperty, "\u2713");
         glyph.SetValue(TextBlock.FontSizeProperty, 11.0);
-        glyph.SetValue(TextBlock.ForegroundProperty, Brush(Fg));
+        glyph.SetValue(TextBlock.ForegroundProperty, Brush(AccentText));
         glyph.SetValue(TextBlock.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Center);
         glyph.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         glyph.SetValue(TextBlock.MarginProperty, new Thickness(0, -1, 0, 0));
@@ -169,7 +256,8 @@ static class TemplateTheme
             };
             trigger.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "Glyph"));
             trigger.Setters.Add(new Setter(System.Windows.Controls.Border.BackgroundProperty, Brush(Accent), "Mark"));
-            trigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderBrushProperty, Brush(Color.FromRgb(0xC8, 0xC8, 0xC8)), "Mark"));
+            trigger.Setters.Add(new Setter(System.Windows.Controls.Border.BorderBrushProperty,
+                Brush(Color.FromArgb(0xAA, AccentText.R, AccentText.G, AccentText.B)), "Mark"));
             return trigger;
         }
     }
@@ -182,7 +270,7 @@ static class TemplateTheme
             Foreground = Brush(Fg),
             BorderBrush = Brush(Border),
             BorderThickness = new Thickness(1),
-            FontFamily = new FontFamily("Segoe UI"),
+            FontFamily = UiFont,
             FontSize = 13,
             Padding = new Thickness(2)
         };
@@ -193,12 +281,29 @@ static class TemplateTheme
         return list;
     }
 
-    public static void StyleWindow(Window window)
+    public static void StyleWindow(Window window) => ApplyChrome(window);
+
+    public static void ApplyChrome(Window window, bool allowShadow = false)
     {
         window.Background = Brush(BgDeep);
         window.Foreground = Brush(Fg);
-        window.FontFamily = new FontFamily("Segoe UI");
+        window.FontFamily = UiFont;
         window.WindowStyle = WindowStyle.SingleBorderWindow;
-        window.Effect = null;
+        window.Effect = allowShadow ? SoftShadow() : null;
+    }
+
+    public static DropShadowEffect SoftShadow()
+    {
+        var e = new DropShadowEffect
+        {
+            Color = Colors.Black,
+            BlurRadius = 10,
+            ShadowDepth = 2,
+            Opacity = 0.28,
+            Direction = 270,
+            RenderingBias = RenderingBias.Performance
+        };
+        e.Freeze();
+        return e;
     }
 }

@@ -46,13 +46,13 @@ static class GameFocus
     }
 
     /// <summary>Вызов с крючка мыши: только пара системных запросов, без реестра.</summary>
-    public static bool IsPlaying()
+    public static bool IsPlaying(bool fresh = false)
     {
         try
         {
             IntPtr hwnd = GetForegroundWindow();
             long now = Environment.TickCount64;
-            if (hwnd == _hwnd && now < _until)
+            if (!fresh && hwnd == _hwnd && now < _until)
                 return _playing;
             _hwnd = hwnd;
             _until = now + 350;
@@ -189,10 +189,18 @@ static class GameFocus
         if (!GetMonitorInfo(monitor, ref info))
             return false;
         var screen = info.Monitor;
-        return window.Left <= screen.Left + 2
-            && window.Top <= screen.Top + 2
-            && window.Right >= screen.Right - 2
-            && window.Bottom >= screen.Bottom - 2;
+        // Почти весь монитор (borderless / «безрамочный» режим).
+        if (window.Left <= screen.Left + 12
+            && window.Top <= screen.Top + 12
+            && window.Right >= screen.Right - 12
+            && window.Bottom >= screen.Bottom - 12)
+            return true;
+
+        double winW = Math.Max(0, window.Right - window.Left);
+        double winH = Math.Max(0, window.Bottom - window.Top);
+        double monW = Math.Max(1, screen.Right - screen.Left);
+        double monH = Math.Max(1, screen.Bottom - screen.Top);
+        return (winW * winH) >= (monW * monH) * 0.90;
     }
 
     private static bool HasCaption(IntPtr hwnd)

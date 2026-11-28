@@ -20,9 +20,10 @@ public partial class RadialMenuWindow: Window
     private readonly Dictionary<Button, Brush> _restFills = new();
     private readonly Dictionary<Button, Brush> _hoverFills = new();
     private readonly List<FrameworkElement> _flyout = new();
-    private Border? _flyoutPanel;
+    private FrameworkElement? _flyoutPanel;
     private Border? _peekPanel;
     private Button? _flyoutParent;
+    private bool _flyoutIsDesk;
     private string? _peekPath;
     private readonly List<string> _peekStack = new();
     private System.Windows.Threading.DispatcherTimer? _hideFlyoutTimer;
@@ -40,11 +41,12 @@ public partial class RadialMenuWindow: Window
     private double _ringCy = 350;
     private double _discClearR = 200;
     private Rect _clusterRect = Rect.Empty;
+    private Rect _formCluster = Rect.Empty;
     private string? _loadedRingSkinPath;
     private bool _skinActive;
     private bool _buttonsBuilt;
     private readonly List<RingSlot> _slots = new();
-    private readonly Dictionary<MenuAction, Border> _keptFlyouts = new();
+    private readonly Dictionary<MenuAction, FrameworkElement> _keptFlyouts = new();
     private int _peekSchedule;
     private double _orbitRadius = OrbitRadius;
     private double _slotSize = ButtonSize;
@@ -138,12 +140,97 @@ public partial class RadialMenuWindow: Window
             Visibility = Visibility.Visible;
     }
 
+    /// <summary>
+    /// Клик в «живой» зоне: диск кольца, кнопки, выезд, подсказка.
+    /// Прозрачные поля вокруг не считаются: по ним колесо закрывается.
+    /// </summary>
+    public bool HitsKeepAlive(int screenX, int screenY)
+    {
+        try
+        {
+            Point pos = RingCanvas.PointFromScreen(new Point(screenX, screenY));
+            double dx = pos.X - _ringCx;
+            double dy = pos.Y - _ringCy;
+            double clear = DiscKeepOut() + 16;
+            if (dx * dx + dy * dy <= clear * clear)
+                return true;
+
+            if (!_clusterRect.IsEmpty)
+            {
+                var clusterHit = _clusterRect;
+                clusterHit.Inflate(18, 18);
+                if (clusterHit.Contains(pos))
+                    return true;
+            }
+
+            if (_flyoutPanel != null && _flyoutPanel is not Canvas)
+            {
+                var panel = PanelRect(_flyoutPanel);
+                panel.Inflate(14, 14);
+                if (panel.Contains(pos))
+                    return true;
+                if (_flyoutParent != null)
+                {
+                    var btn = new Rect(
+                        Canvas.GetLeft(_flyoutParent),
+                        Canvas.GetTop(_flyoutParent),
+                        Math.Max(1, _flyoutParent.ActualWidth > 1 ? _flyoutParent.ActualWidth : _flyoutParent.Width),
+                        Math.Max(1, _flyoutParent.ActualHeight > 1 ? _flyoutParent.ActualHeight : _flyoutParent.Height));
+                    var hull = Rect.Union(panel, btn);
+                    hull.Inflate(18, 18);
+                    if (hull.Contains(pos))
+                        return true;
+                }
+            }
+
+            if (_peekPanel != null)
+            {
+                var peek = PanelRect(_peekPanel);
+                peek.Inflate(10, 10);
+                if (peek.Contains(pos))
+                    return true;
+            }
+
+            if (HintCard.Visibility == Visibility.Visible && HintCard.Opacity > 0.05)
+            {
+                double hx = Canvas.GetLeft(HintCard);
+                double hy = Canvas.GetTop(HintCard);
+                if (!double.IsNaN(hx) && !double.IsNaN(hy))
+                {
+                    var hint = new Rect(hx, hy,
+                        Math.Max(1, HintCard.ActualWidth),
+                        Math.Max(1, HintCard.ActualHeight));
+                    hint.Inflate(8, 8);
+                    if (hint.Contains(pos))
+                        return true;
+                }
+            }
+
+            if (!_clusterRect.IsEmpty)
+            {
+                var cluster = _clusterRect;
+                cluster.Inflate(12, 12);
+                if (cluster.Contains(pos))
+                    return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>Строим кнопки один раз; снова только после AppearanceStore.Save (смена скина).</summary>
     private void EnsureButtonsForCurrentSettings()
     {
         int rev = AppearanceStore.Revision;
         if (_buttonsBuilt && _builtAtAppearanceRevision == rev)
             return;
+
+        ClearFlyout();
+        _keptFlyouts.Clear();
 
         var (radius, slotSize, fit) = ComputeOrbitLayout();
         _orbitRadius = radius;
@@ -657,9 +744,11 @@ public partial class RadialMenuWindow: Window
             if (isFlyout)
                 CancelHideFlyout();
             else if (action.IsDeskPanel || action.IsProcessGroup || action.Children.Count > 0)
-                ShowFlyout(btn, action);
-            else
+                RequestFlyout(btn, action);
+            else if (_flyoutPanel == null)
                 ClearFlyout();
+            else
+                ScheduleHideFlyout();
             if (!isFlyout)
                 ArmHint(action);
         };
@@ -669,6 +758,8 @@ public partial class RadialMenuWindow: Window
                 ApplyFill(btn, hover: false);
             else
                 AnimateIconHover(btn, on: false);
+            if (ReferenceEquals(_switchButton, btn))
+                CancelFlyoutSwitch();
             if (isFlyout || action.IsDeskPanel || action.IsProcessGroup || action.Children.Count > 0 || action.Kind == ActionKind.Group)
                 ScheduleHideFlyout();
             CancelHint();
@@ -697,7 +788,7 @@ public partial class RadialMenuWindow: Window
     {
         var look = AppearanceStore.ActiveLook();
         return string.IsNullOrEmpty(look.ArtFolder)
-            ? Color.FromArgb(0xDD, 0xF5, 0xF0, 0xE8)
+            ? Color.FromArgb(0xDD, TemplateTheme.Fg.R, TemplateTheme.Fg.G, TemplateTheme.Fg.B)
             : look.IconColor;
     }
 
@@ -706,7 +797,7 @@ public partial class RadialMenuWindow: Window
         var look = AppearanceStore.ActiveLook();
         bool onWheel = !isFlyout;
         bool themed = onWheel && !string.IsNullOrEmpty(look.ArtFolder);
-        var ink = themed ? look.IconColor : Color.FromRgb(0xF5, 0xF0, 0xE8);
+        var ink = themed ? look.IconColor : TemplateTheme.Fg;
 
         UIElement visual;
         if (action.HasFileIcon)
@@ -794,35 +885,59 @@ public partial class RadialMenuWindow: Window
         };
     }
 
+    private Button? _switchButton;
+    private MenuAction? _switchAction;
+    private System.Windows.Threading.DispatcherTimer? _switchTimer;
+
     /// <summary>
-    /// Выезд без скролла: всё видно сразу. Много пунктов → больше колонок, панель шире.
+    /// Первое наведение открывает сразу. Если выезд уже есть, соседнюю кнопку
+    /// не переключаем мгновенно: иначе путь к ленте срывает панель.
     /// </summary>
+    private void RequestFlyout(Button btn, MenuAction action)
+    {
+        CancelHideFlyout();
+        if (_flyoutPanel == null || ReferenceEquals(_flyoutParent, btn))
+        {
+            CancelFlyoutSwitch();
+            ShowFlyout(btn, action);
+            return;
+        }
+
+        _switchButton = btn;
+        _switchAction = action;
+        _switchTimer ??= new System.Windows.Threading.DispatcherTimer();
+        _switchTimer.Interval = TimeSpan.FromMilliseconds(320);
+        _switchTimer.Stop();
+        _switchTimer.Tick -= OnFlyoutSwitchTick;
+        _switchTimer.Tick += OnFlyoutSwitchTick;
+        _switchTimer.Start();
+    }
+
+    private void OnFlyoutSwitchTick(object? sender, EventArgs e)
+    {
+        _switchTimer?.Stop();
+        var btn = _switchButton;
+        var action = _switchAction;
+        _switchButton = null;
+        _switchAction = null;
+        if (btn == null || action == null || !btn.IsMouseOver)
+            return;
+        ShowFlyout(btn, action);
+    }
+
+    private void CancelFlyoutSwitch()
+    {
+        _switchTimer?.Stop();
+        _switchButton = null;
+        _switchAction = null;
+    }
+
+    /// <summary>Выезд формой вокруг круга: ореол, дуга, веер или стык.</summary>
     private void ShowFlyout(Button parent, MenuAction action)
     {
         CancelHideFlyout();
-        if (ReferenceEquals(_flyoutParent, parent))
+        if (ReferenceEquals(_flyoutParent, parent) && _flyoutPanel != null)
             return;
-
-        if (!action.IsProcessGroup && _keptFlyouts.TryGetValue(action, out var kept))
-        {
-            DetachFlyout(destroyDynamic: true);
-            _flyoutParent = parent;
-            _flyoutPanel = kept;
-            if (!RingCanvas.Children.Contains(kept))
-                RingCanvas.Children.Add(kept);
-            if (action.IsFoldersGroup)
-            {
-                _foldersGroupAction = action;
-                _foldersCompact = kept.Tag is true;
-                LayoutFolderCluster();
-            }
-            else
-            {
-                kept.Measure(new System.Windows.Size(kept.Width, double.PositiveInfinity));
-                AttachFlyout(parent, kept, kept.Width, Math.Max(kept.DesiredSize.Height, 40));
-            }
-            return;
-        }
 
         ClearFlyout();
 
@@ -842,80 +957,230 @@ public partial class RadialMenuWindow: Window
             return;
 
         _flyoutParent = parent;
-        bool folders = action.IsFoldersGroup;
+        _flyoutIsDesk = false;
 
-        if (folders)
+        if (action.IsFoldersGroup)
         {
             _foldersGroupAction = action;
-            // Сразу узкий список: широкий грид наезжал на круг в компактном окне.
             _foldersCompact = true;
-            _flyoutPanel = BuildFoldersPanel(action, compact: true);
-            RingCanvas.Children.Add(_flyoutPanel);
-            _flyout.Add(_flyoutPanel);
-            Panel.SetZIndex(_flyoutPanel, 50);
-            _flyoutPanel.Tag = true;
-            _keptFlyouts[action] = _flyoutPanel;
-            LayoutFolderCluster();
+            ShowFoldersForm(parent, action);
             return;
         }
 
-        int n = action.Children.Count;
-        const double pad = 10;
-        const double gap = 6;
-        const double rowH = 40;
-        const double iconBox = 32;
+        ShowItemsForm(parent, action, action.Children.ToList());
+    }
 
-        int cols = n switch { <= 8 => 1, <= 14 => 2, _ => 3 };
-        double tileW = 200;
-        double innerW = cols * tileW + (cols - 1) * gap;
-        double panelW = innerW + pad * 2;
+    private void ShowItemsForm(Button parent, MenuAction action, IReadOnlyList<MenuAction> children)
+    {
+        string form = FlyoutLooks.EffectiveForm(AppearanceStore.Current.FlyoutStyle, children.Count, deskUi: false);
+        EnsureSpaceForForm(form, children.Count);
 
-        var grid = new UniformGrid
+        var tiles = new List<FrameworkElement>(children.Count);
+        foreach (var child in children)
         {
-            Columns = cols,
-            Rows = (int)Math.Ceiling(n / (double)cols)
-        };
-
-        foreach (var child in action.Children)
-        {
-            FrameworkElement cell = CreateFlyoutRow(child, tileW - 2, rowH, iconBox);
-            cell.Margin = new Thickness(gap / 2);
-            grid.Children.Add(cell);
-            _flyout.Add(cell);
+            var tile = CreateFormTile(form, child);
+            tiles.Add(tile);
+            _flyout.Add(tile);
         }
 
-        var root = new StackPanel { Orientation = System.Windows.Controls.Orientation.Vertical };
-        root.Children.Add(new TextBlock
-        {
-            Text = string.IsNullOrWhiteSpace(action.Label) ? "Ярлыки" : action.Label,
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromArgb(0x99, 0xF5, 0xF0, 0xE8)),
-            Margin = new Thickness(4, 0, 4, 8),
-            IsHitTestVisible = false
-        });
-        root.Children.Add(grid);
-
-        _flyoutPanel = new Border
-        {
-            Width = panelW,
-            Padding = new Thickness(pad),
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1),
-            BorderBrush = Solid(Color.FromArgb(0x40, 0xF5, 0xF0, 0xE8)),
-            Background = Solid(Color.FromArgb(0xF0, 0x16, 0x16, 0x18)),
-            Child = root,
-            SnapsToDevicePixels = true,
-            Opacity = 0,
-            RenderTransformOrigin = new Point(0, 0.5),
-            RenderTransform = new TranslateTransform(-12, 0)
-        };
-
-        _flyoutPanel.Measure(new System.Windows.Size(panelW, double.PositiveInfinity));
-        double panelH = _flyoutPanel.DesiredSize.Height;
-        _keptFlyouts[action] = _flyoutPanel;
-        AttachFlyout(parent, _flyoutPanel, panelW, panelH);
+        double aim = AimAngleOf(parent);
+        double keep = FlyoutKeepOut();
+        string title = string.IsNullOrWhiteSpace(action.Label) ? "Ярлыки" : action.Label;
+        var mount = FlyoutForms.Build(
+            form, _ringCx, _ringCy, keep, aim, title, tiles,
+            RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
     }
+
+    /// <summary>Папки: та же форма что у игр. Превью по наведению на плитку.</summary>
+    private void ShowFoldersForm(Button parent, MenuAction action)
+    {
+        string form = FlyoutLooks.EffectiveForm(AppearanceStore.Current.FlyoutStyle, action.Children.Count, deskUi: false);
+        if (form == "dock")
+        {
+            ShowFoldersDock(parent, action);
+            return;
+        }
+
+        EnsureSpaceForForm(form, action.Children.Count);
+        var tiles = new List<FrameworkElement>(action.Children.Count);
+        foreach (var child in action.Children)
+        {
+            var tile = CreateFormTile(form, child);
+            WireFolderPeek(tile, child);
+            tiles.Add(tile);
+            _flyout.Add(tile);
+        }
+
+        double aim = AimAngleOf(parent);
+        string title = string.IsNullOrWhiteSpace(action.Label) ? "Папки" : action.Label;
+        var mount = FlyoutForms.Build(
+            form, _ringCx, _ringCy, FlyoutKeepOut(), aim, title, tiles,
+            RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
+        if (_peekPanel != null)
+            LayoutPeekBesideCluster();
+    }
+
+    private void ShowFoldersDock(Button parent, MenuAction action)
+    {
+        var list = new StackPanel();
+        foreach (var child in action.Children)
+        {
+            var row = CreateFlyoutRow(child, 168, 40, 28);
+            row.Margin = new Thickness(0, 0, 0, 4);
+            WireFolderPeek(row, child);
+            list.Children.Add(row);
+            _flyout.Add(row);
+        }
+
+        list.Measure(new System.Windows.Size(180, 2000));
+        double h = Math.Min(Math.Max(list.DesiredSize.Height, 80), Math.Max(160, RingCanvas.Height - 120));
+        if (list.DesiredSize.Height > h)
+            MountDenseForm(parent, action.Label, MakeHiddenScroll(list, h), 180, h, "dock");
+        else
+            MountDenseForm(parent, action.Label, list, 180, h, "dock");
+    }
+
+    private void WireFolderPeek(FrameworkElement tile, MenuAction child)
+    {
+        // Содержимое папки не вытаскиваем вторым окном: оно наезжало на форму.
+        _ = child;
+        tile.MouseEnter += (_, _) => CancelHideFlyout();
+    }
+
+    private FrameworkElement CreateFormTile(string form, MenuAction child) => form switch
+    {
+        "halo" or "crown" => CreateHaloDot(child),
+        "fan" => CreateFanPetal(child),
+        "ribbon" or "arc" => CreateFlyoutRow(child, 118, 32, 22),
+        "burst" => CreateFlyoutRow(child, 128, 34, 24),
+        _ => CreateFlyoutRow(child, 188, 36, 28)
+    };
+
+    private void MountDenseForm(Button parent, string title, FrameworkElement content, double w, double h, string form)
+    {
+        _flyoutParent = parent;
+        EnsureSpaceForForm(form, 20);
+        double keep = FlyoutKeepOut();
+        var mount = FlyoutForms.BuildDense(
+            form, _ringCx, _ringCy, keep,
+            string.IsNullOrWhiteSpace(title) ? "Папки" : title,
+            content, w, h, RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
+        if (_peekPanel != null)
+            LayoutPeekBesideCluster();
+    }
+
+    private void ApplyMount(FlyoutMount mount)
+    {
+        _flyoutPanel = mount.Root;
+        if (double.IsNaN(Canvas.GetLeft(mount.Root)))
+            Canvas.SetLeft(mount.Root, 0);
+        if (double.IsNaN(Canvas.GetTop(mount.Root)))
+            Canvas.SetTop(mount.Root, 0);
+        _formCluster = mount.Cluster;
+        _clusterRect = mount.Cluster;
+        Panel.SetZIndex(mount.Root, 50);
+        if (!RingCanvas.Children.Contains(mount.Root))
+            RingCanvas.Children.Add(mount.Root);
+        if (!_flyout.Contains(mount.Root))
+            _flyout.Add(mount.Root);
+
+        foreach (var part in mount.Parts)
+        {
+            if (!_flyout.Contains(part))
+                _flyout.Add(part);
+            part.MouseEnter -= FlyoutKeepAliveEnter;
+            part.MouseLeave -= FlyoutKeepAliveLeave;
+            part.MouseEnter += FlyoutKeepAliveEnter;
+            part.MouseLeave += FlyoutKeepAliveLeave;
+        }
+
+        PlaceHintCard();
+    }
+
+    private void EnsureSpaceForForm(string form, int count)
+    {
+        double keep = FlyoutKeepOut();
+        double extra = form switch
+        {
+            "dock" => 420,
+            "ribbon" or "arc" => 160,
+            "fan" => 170,
+            "burst" => 200,
+            "crown" => 140,
+            _ => count > 10 ? 130 : 100
+        };
+        EnsureSpaceBesideRing(extra, keep * 2 + Math.Min(extra, 180));
+    }
+
+    private double AimAngleOf(Button parent)
+    {
+        foreach (var slot in _slots)
+        {
+            if (ReferenceEquals(slot.Button, parent))
+                return slot.Angle;
+        }
+
+        double px = Canvas.GetLeft(parent) + parent.Width / 2;
+        double py = Canvas.GetTop(parent) + parent.Height / 2;
+        return Math.Atan2(py - _ringCy, px - _ringCx);
+    }
+
+    /// <summary>Круглая точка ореола: только иконка, имя в подсказке.</summary>
+    private Button CreateHaloDot(MenuAction action)
+    {
+        var icon = CreateIconVisual(action, 22, center: false, isFlyout: true);
+        if (icon is FrameworkElement fe)
+        {
+            fe.Width = 22;
+            fe.Height = 22;
+            fe.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+            fe.VerticalAlignment = VerticalAlignment.Center;
+        }
+
+        string name = string.IsNullOrWhiteSpace(action.Label) ? action.Value : action.Label;
+        var rest = Solid(Color.FromArgb(0xEE, TemplateTheme.BgPanel.R, TemplateTheme.BgPanel.G, TemplateTheme.BgPanel.B));
+        var hover = Solid(Color.FromArgb(0xFF, TemplateTheme.Accent.R, TemplateTheme.Accent.G, TemplateTheme.Accent.B));
+        var btn = new Button
+        {
+            Width = 44,
+            Height = 44,
+            Content = icon,
+            Background = rest,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Solid(Color.FromArgb(0x88, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)),
+            Cursor = Cursors.Hand,
+            Tag = action,
+            Focusable = false,
+            Padding = new Thickness(0),
+            ToolTip = name,
+            Template = GetRoundTemplate(44)
+        };
+        WireFlyoutButton(btn, action, rest, hover);
+        btn.MouseEnter += (_, _) =>
+        {
+            HintTitle.Text = name;
+            HintBody.Text = string.IsNullOrWhiteSpace(action.Description) ? "Запуск" : action.Description;
+            HintCard.Visibility = Visibility.Visible;
+            HintCard.Opacity = 1;
+            PlaceHintCard();
+        };
+        return btn;
+    }
+
+    /// <summary>Лепесток веера: читаемая строка у кнопки группы.</summary>
+    private Button CreateFanPetal(MenuAction action)
+    {
+        var row = CreateFlyoutRow(action, 150, 36, 24);
+        row.Width = 150;
+        row.Height = 36;
+        return row;
+    }
+
+    /// <summary>Кромка для выезда: почти по внешнему краю кнопок, без запаса скина.</summary>
+    private double FlyoutKeepOut() => _orbitRadius + _slotSize * 0.48 + 8;
 
     /// <summary>Сетка папок. compact=true: узкий список, когда справа открыто превью.</summary>
     private Border BuildFoldersPanel(MenuAction action, bool compact)
@@ -965,7 +1230,7 @@ public partial class RadialMenuWindow: Window
             Text = string.IsNullOrWhiteSpace(action.Label) ? "Папки" : action.Label,
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromArgb(0x99, 0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.AccentText),
             Margin = new Thickness(4, 0, 4, 8),
             IsHitTestVisible = false
         });
@@ -975,125 +1240,80 @@ public partial class RadialMenuWindow: Window
         {
             Width = panelW,
             Padding = new Thickness(pad),
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1),
-            BorderBrush = Solid(Color.FromArgb(0x40, 0xF5, 0xF0, 0xE8)),
-            Background = Solid(Color.FromArgb(0xF0, 0x16, 0x16, 0x18)),
-            Child = root,
-            SnapsToDevicePixels = true,
-            Opacity = 1
+            Background = Brushes.Transparent,
+            Child = root
         };
-        panel.MouseEnter += FlyoutKeepAliveEnter;
-        panel.MouseLeave += FlyoutKeepAliveLeave;
         panel.Measure(new System.Windows.Size(panelW, double.PositiveInfinity));
         return panel;
     }
 
-    /// <summary>Сжать/развернуть список папок и переставить кластер рядом с кругом (не поверх).</summary>
+    /// <summary>Превью папки справа от текущего кластера формы.</summary>
+    private void LayoutPeekBesideCluster()
+    {
+        if (_peekPanel == null)
+            return;
+
+        const double margin = 8;
+        double canvasH = RingCanvas.Height;
+        _peekPanel.Measure(new System.Windows.Size(_peekPanel.Width, double.PositiveInfinity));
+        double pw = _peekPanel.Width;
+        double ph = Math.Max(_peekPanel.DesiredSize.Height, 80);
+        if (_peekPanel.MaxHeight > 0 && !double.IsInfinity(_peekPanel.MaxHeight))
+            ph = Math.Min(ph, _peekPanel.MaxHeight);
+
+        // Форма вокруг диска (ореол, корона): её прямоугольник включает центр круга.
+        // Превью тогда ставим в полосу справа от кромки, на высоте кнопки.
+        // Колонка (веер, лента): сразу за ней. Координата не зависит от прошлого превью.
+        Rect anchor = _formCluster;
+        bool around = !anchor.IsEmpty && anchor.Contains(new Point(_ringCx, _ringCy));
+        double minLeft = _ringCx + FlyoutKeepOut() + 10;
+        double left;
+        double top;
+        if (around || anchor.IsEmpty)
+        {
+            left = minLeft;
+            double by = _ringCy;
+            if (_flyoutParent != null)
+            {
+                double py = Canvas.GetTop(_flyoutParent);
+                double bh = _flyoutParent.ActualHeight > 1 ? _flyoutParent.ActualHeight : _flyoutParent.Height;
+                if (!double.IsNaN(py))
+                    by = py + Math.Max(bh, 1) / 2;
+            }
+            top = by - ph / 2;
+        }
+        else
+        {
+            left = anchor.Right + 8;
+            top = anchor.Top;
+        }
+
+        top = Math.Clamp(top, margin, Math.Max(margin, canvasH - ph - margin));
+        double maxLeft = Math.Max(minLeft, RingCanvas.Width - pw - 8);
+        left = Math.Clamp(left, minLeft, maxLeft);
+
+        Canvas.SetLeft(_peekPanel, Math.Round(left));
+        Canvas.SetTop(_peekPanel, Math.Round(top));
+        Panel.SetZIndex(_peekPanel, 55);
+        _peekPanel.Arrange(new Rect(left, top, pw, ph));
+        var peekRect = new Rect(left, top, pw, ph);
+        _clusterRect = anchor.IsEmpty ? peekRect : Rect.Union(anchor, peekRect);
+        PlaceHintCard();
+    }
+
     private void SetFoldersCompactMode(bool compact)
     {
         if (_foldersGroupAction == null || _flyoutParent == null)
             return;
-        if (_foldersCompact == compact && _flyoutPanel != null)
-        {
-            LayoutFolderCluster();
-            return;
-        }
-
         _foldersCompact = compact;
-        if (_flyoutPanel != null)
-        {
-            RingCanvas.Children.Remove(_flyoutPanel);
-            _flyout.Remove(_flyoutPanel);
-        }
-
-        // Убрать старые плитки папок из трекинга (превью оставляем).
-        for (int i = _flyout.Count - 1; i >= 0; i--)
-        {
-            if (!ReferenceEquals(_flyout[i], _peekPanel))
-                _flyout.RemoveAt(i);
-        }
-
-        _flyoutPanel = BuildFoldersPanel(_foldersGroupAction, compact);
-        RingCanvas.Children.Add(_flyoutPanel);
-        _flyout.Add(_flyoutPanel);
-        Panel.SetZIndex(_flyoutPanel, 50);
-        _flyoutPanel.Tag = compact;
-        _keptFlyouts[_foldersGroupAction] = _flyoutPanel;
-        LayoutFolderCluster();
-    }
-
-    /// <summary>
-    /// Папки + превью строго справа от круга. Если места мало — расширяем окно,
-    /// круг двигаем влево. Никогда не кладём панели поверх кольца.
-    /// </summary>
-    private void LayoutFolderCluster()
-    {
-        if (_flyoutPanel == null)
-            return;
-
-        const double margin = 8;
-        const double gapRing = 10;
-        const double overlap = 2;
-        const double hintReserve = 70;
-
-        _flyoutPanel.Measure(new System.Windows.Size(_flyoutPanel.Width, double.PositiveInfinity));
-        double fw = _flyoutPanel.Width;
-        double fh = Math.Max(_flyoutPanel.DesiredSize.Height, 80);
-        if (_flyoutPanel.MaxHeight > 0 && !double.IsInfinity(_flyoutPanel.MaxHeight))
-            fh = Math.Min(fh, _flyoutPanel.MaxHeight);
-
-        double pw = 0;
-        double ph = 0;
-        if (_peekPanel != null)
-        {
-            _peekPanel.Measure(new System.Windows.Size(_peekPanel.Width, double.PositiveInfinity));
-            pw = _peekPanel.Width;
-            ph = Math.Max(_peekPanel.DesiredSize.Height, 80);
-            if (_peekPanel.MaxHeight > 0 && !double.IsInfinity(_peekPanel.MaxHeight))
-                ph = Math.Min(ph, _peekPanel.MaxHeight);
-        }
-
-        double totalW = fw + (pw > 0 ? pw - overlap : 0);
-        double clusterH = Math.Max(fh, ph > 0 ? ph : fh);
-
-        // Место справа от круга под список (+ превью): при нехватке растём окно, не наезжаем.
-        EnsureSpaceBesideRing(totalW + gapRing + margin, clusterH + hintReserve + 2 * margin);
-
-        double canvasH = RingCanvas.Height;
-        double maxH = Math.Max(120, canvasH - 2 * margin - hintReserve);
-        if (fh > maxH)
-        {
-            _flyoutPanel.MaxHeight = maxH;
-            fh = maxH;
-        }
-        if (_peekPanel != null && ph > maxH)
-        {
-            _peekPanel.MaxHeight = maxH;
-            ph = maxH;
-        }
-        clusterH = Math.Max(fh, ph > 0 ? ph : fh);
-
-        double left = _ringCx + _discClearR + gapRing;
-        double top = Math.Clamp(_ringCy - clusterH / 2, margin, Math.Max(margin, canvasH - clusterH - hintReserve - margin));
-
-        Canvas.SetLeft(_flyoutPanel, Math.Round(left));
-        Canvas.SetTop(_flyoutPanel, Math.Round(top));
-        Panel.SetZIndex(_flyoutPanel, 50);
-        _flyoutPanel.Width = fw;
-        _flyoutPanel.Arrange(new Rect(left, top, fw, fh));
-
-        if (_peekPanel != null)
-        {
-            double peekLeft = left + fw - overlap;
-            Canvas.SetLeft(_peekPanel, Math.Round(peekLeft));
-            Canvas.SetTop(_peekPanel, Math.Round(top));
-            Panel.SetZIndex(_peekPanel, 55);
-            _peekPanel.Arrange(new Rect(peekLeft, top, pw, Math.Max(ph, fh)));
-        }
-
-        _clusterRect = new Rect(left, top, totalW, clusterH);
-        PlaceHintCard();
+        var peek = _peekPanel;
+        var parent = _flyoutParent;
+        var action = _foldersGroupAction;
+        ClearFlyout();
+        _peekPanel = peek;
+        if (peek != null && !RingCanvas.Children.Contains(peek))
+            RingCanvas.Children.Add(peek);
+        ShowFoldersForm(parent, action);
     }
 
     /// <summary>
@@ -1103,7 +1323,7 @@ public partial class RadialMenuWindow: Window
     /// </summary>
     private void EnsureSpaceBesideRing(double needRight, double needH)
     {
-        double clear = Math.Max(_discClearR, 200);
+        double clear = DiscKeepOut();
         double ringRight = _ringCx + clear;
         double curW = _lastWinW > 0 ? _lastWinW : Width;
         double curH = _lastWinH > 0 ? _lastWinH : Height;
@@ -1194,25 +1414,101 @@ public partial class RadialMenuWindow: Window
             {
                 if (gen != _processGen || !ReferenceEquals(_flyoutParent, parent))
                     return;
-                ClearFlyout();
+                // Уже показали список из кэша: не дёргать Clear+пересборку, это даёт лаг.
+                if (_flyoutPanel != null)
+                    return;
                 BuildProcessFlyout(parent, action, t.Result);
             });
         });
     }
 
-    /// <summary>Динамический список процессов: клик = завершить.</summary>
+    /// <summary>Динамический список процессов: клик = завершить. Форма как у остальных групп.</summary>
     private void BuildProcessFlyout(Button parent, MenuAction action, IReadOnlyList<ProcessEntry> entries)
     {
         _flyoutParent = parent;
+        _flyoutIsDesk = false;
+        string form = FlyoutLooks.EffectiveForm(AppearanceStore.Current.FlyoutStyle, entries.Count + 3, deskUi: false);
+        if (form == "dock")
+        {
+            BuildProcessDock(parent, action, entries);
+            return;
+        }
+
+        // Орбитальные формы: не больше 12 процессов + 3 служебных, иначе каша.
+        var show = entries.Count > 12 ? entries.Take(12).ToList() : entries;
+        var tiles = new List<FrameworkElement>(show.Count + 3);
+        tiles.Add(CreateProcessFormAction(form, "Диспетчер", "\uE7F4", "Открыть диспетчер задач.", () =>
+        {
+            ClearFlyout();
+            ActionDispatcher.Execute(new MenuAction
+            {
+                Label = "Диспетчер задач",
+                Kind = ActionKind.Launch,
+                Value = "taskmgr.exe"
+            });
+            Dismissed?.Invoke(this, EventArgs.Empty);
+        }));
+        tiles.Add(CreateProcessFormAction(form, "Проводник", "\uE8B7", "Перезапустить Explorer.", () =>
+        {
+            HintTitle.Text = "Проводник";
+            HintBody.Text = "Перезапускаю…";
+            HintCard.Visibility = Visibility.Visible;
+            HintCard.Opacity = 1;
+            PlaceHintCard();
+            Task.Run(ProcessKillService.TryRestartExplorer).ContinueWith(t =>
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    string err = t.Status == TaskStatus.RanToCompletion ? t.Result : "Не удалось перезапустить проводник.";
+                    if (err.Length > 0)
+                    {
+                        HintBody.Text = err;
+                        PlaceHintCard();
+                        return;
+                    }
+
+                    ClearFlyout();
+                    ShowProcessFlyout(parent, action);
+                    HintTitle.Text = "Проводник";
+                    HintBody.Text = "Explorer перезапущен.";
+                    HintCard.Visibility = Visibility.Visible;
+                    HintCard.Opacity = 1;
+                    PlaceHintCard();
+                });
+            });
+        }));
+        tiles.Add(CreateProcessFormAction(form, "Обновить", "\uE72C", "Перечитать список.", () =>
+        {
+            ClearFlyout();
+            _processGen++;
+            ShowProcessFlyout(parent, action);
+        }));
+
+        foreach (var entry in show)
+            tiles.Add(CreateProcessFormKill(form, entry));
+
+        foreach (var tile in tiles)
+            _flyout.Add(tile);
+
+        EnsureSpaceForForm(form, tiles.Count);
+        string title = entries.Count > show.Count
+            ? $"Процессы ({show.Count})"
+            : "Процессы";
+        var mount = FlyoutForms.Build(
+            form, _ringCx, _ringCy, FlyoutKeepOut(), AimAngleOf(parent), title, tiles,
+            RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
+    }
+
+    private void BuildProcessDock(Button parent, MenuAction action, IReadOnlyList<ProcessEntry> entries)
+    {
         const double pad = 10;
         const double gap = 6;
         const double tileH = 40;
         const double tileW = 168;
         const int cols = 3;
-        // Высота сетки: сколько реально влезает на этом мониторе (оставляем место подсказке).
         double maxGridH = Math.Clamp(RingCanvas.Height - 160, 140, 420);
 
-        // +3: «Диспетчер», «Проводник», «Обновить»
         int n = entries.Count + 3;
         int rows = (int)Math.Ceiling(n / (double)cols);
         double panelW = cols * tileW + (cols - 1) * gap + pad * 2;
@@ -1285,6 +1581,7 @@ public partial class RadialMenuWindow: Window
             () =>
             {
                 ClearFlyout();
+                _processGen++;
                 ShowProcessFlyout(parent, action);
             });
         refresh.Margin = new Thickness(gap / 2);
@@ -1305,126 +1602,139 @@ public partial class RadialMenuWindow: Window
             gridHost = MakeHiddenScroll(grid, maxGridH);
 
         var root = new StackPanel { Orientation = System.Windows.Controls.Orientation.Vertical };
-        root.Children.Add(new TextBlock
-        {
-            Text = "Процессы: клик завершает (проверяем выход)",
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromArgb(0x99, 0xF5, 0xF0, 0xE8)),
-            Margin = new Thickness(4, 0, 4, 8),
-            IsHitTestVisible = false
-        });
         root.Children.Add(gridHost);
-
-        _flyoutPanel = new Border
-        {
-            Width = panelW,
-            Padding = new Thickness(pad),
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1),
-            BorderBrush = Solid(Color.FromArgb(0x40, 0xF5, 0xF0, 0xE8)),
-            Background = Solid(Color.FromArgb(0xF0, 0x16, 0x16, 0x18)),
-            Child = root,
-            SnapsToDevicePixels = true,
-            Opacity = 0,
-            RenderTransformOrigin = new Point(0, 0.5),
-            RenderTransform = new TranslateTransform(-12, 0)
-        };
-
-        _flyoutPanel.Measure(new System.Windows.Size(panelW, double.PositiveInfinity));
-        double panelH = _flyoutPanel.DesiredSize.Height;
-        AttachFlyout(parent, _flyoutPanel, panelW, panelH);
+        double contentH = Math.Min(gridH > maxGridH ? maxGridH : gridH, maxGridH) + 8;
+        EnsureSpaceForForm("dock", n);
+        var mount = FlyoutForms.BuildDense(
+            "dock", _ringCx, _ringCy, FlyoutKeepOut(),
+            "Процессы",
+            root, panelW - pad * 2, contentH,
+            RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
     }
 
-    /// <summary>
-    /// Ставит flyout рядом с кнопкой: справа → слева → снизу → сверху.
-    /// Всегда целиком внутри холста.
-    /// </summary>
-    private void AttachFlyout(Button parent, Border panel, double panelW, double panelH, double reserveRight = 0)
+    private FrameworkElement CreateProcessFormAction(string form, string label, string glyph, string hint, Action onClick)
     {
-        const double gap = 14;
-        const double margin = 8;
-        double canvasW = RingCanvas.Width;
-        double canvasH = RingCanvas.Height;
-        double px = Canvas.GetLeft(parent);
-        double py = Canvas.GetTop(parent);
-        double pw = parent.Width;
-        double ph = parent.Height;
-
-        double spaceRight = canvasW - (px + pw + gap) - margin - reserveRight;
-        double spaceLeft = px - gap - margin;
-        double spaceBelow = canvasH - (py + ph + gap) - margin;
-        double spaceAbove = py - gap - margin;
-
-        // Если панель выше доступного места: подрежем через MaxHeight + скролл внутри уже есть у процессов.
-        double fitH = panelH;
-        double left;
-        double top;
-
-        if (spaceRight >= Math.Min(panelW, 120))
+        if (form is "halo" or "crown")
         {
-            left = px + pw + gap;
-            // Не залезать в зону, зарезервированную под превью справа.
-            double peekCap = canvasW - margin - reserveRight - panelW;
-            if (reserveRight > 0 && left > peekCap)
-                left = Math.Max(margin, peekCap);
-            fitH = Math.Min(panelH, canvasH - 2 * margin);
-            top = py + ph / 2 - fitH / 2;
-        }
-        else if (spaceLeft >= Math.Min(panelW, 120))
-        {
-            left = px - gap - panelW;
-            fitH = Math.Min(panelH, canvasH - 2 * margin);
-            top = py + ph / 2 - fitH / 2;
-        }
-        else if (spaceBelow >= Math.Min(panelH, 100))
-        {
-            fitH = Math.Min(panelH, spaceBelow);
-            left = px + pw / 2 - panelW / 2;
-            top = py + ph + gap;
-        }
-        else
-        {
-            fitH = Math.Min(panelH, Math.Max(100, spaceAbove));
-            left = px + pw / 2 - panelW / 2;
-            top = py - gap - fitH;
-        }
-
-        if (fitH < panelH - 1)
-        {
-            panel.MaxHeight = fitH;
-            // Папки/ярлыки без внутреннего скролла: обернём, чтобы ничего не обрезалось.
-            if (panel.Child is FrameworkElement content && content is not ScrollViewer)
+            var btn = CreateProcessActionTile(44, 44, label, hint, glyph, onClick);
+            btn.Width = 44;
+            btn.Height = 44;
+            btn.Padding = new Thickness(0);
+            btn.ToolTip = label;
+            btn.Template = GetRoundTemplate(44);
+            btn.Content = new TextBlock
             {
-                panel.Child = null;
-                panel.Child = MakeHiddenScroll(content, fitH);
-            }
+                Text = glyph,
+                FontFamily = IconFont,
+                FontSize = 16,
+                Foreground = Brushes.White,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false
+            };
+            return btn;
         }
 
-        double maxLeft = canvasW - panelW - margin - Math.Max(0, reserveRight);
-        left = Math.Clamp(left, margin, Math.Max(margin, maxLeft));
-        top = Math.Clamp(top, margin, Math.Max(margin, canvasH - fitH - margin));
+        double w = form is "fan" ? 150 : form is "burst" ? 128 : 118;
+        return CreateProcessActionTile(w, 34, label, hint, glyph, onClick);
+    }
 
-        Canvas.SetLeft(panel, Math.Round(left));
-        Canvas.SetTop(panel, Math.Round(top));
-        Panel.SetZIndex(panel, 50);
-        if (!RingCanvas.Children.Contains(panel))
-            RingCanvas.Children.Add(panel);
-        if (!_flyout.Contains(panel))
-            _flyout.Add(panel);
-
-        panel.MouseEnter -= FlyoutKeepAliveEnter;
-        panel.MouseLeave -= FlyoutKeepAliveLeave;
-        panel.MouseEnter += FlyoutKeepAliveEnter;
-        panel.MouseLeave += FlyoutKeepAliveLeave;
-
-        panel.BeginAnimation(OpacityProperty, null);
-        panel.Opacity = 1;
-        if (panel.RenderTransform is TranslateTransform tt)
+    private FrameworkElement CreateProcessFormKill(string form, ProcessEntry entry)
+    {
+        string label = ProcessKillService.FormatLabel(entry);
+        if (form is "halo" or "crown")
         {
-            tt.BeginAnimation(TranslateTransform.XProperty, null);
-            tt.X = 0;
+            var rest = Solid(Color.FromArgb(0xEE, TemplateTheme.BgPanel.R, TemplateTheme.BgPanel.G, TemplateTheme.BgPanel.B));
+            var hover = Solid(Color.FromArgb(0xFF, 0xA0, 0x4A, 0x4A));
+            string mark = string.IsNullOrEmpty(entry.Name) ? "?" : entry.Name[..1].ToUpperInvariant();
+            var btn = new Button
+            {
+                Width = 44,
+                Height = 44,
+                Content = new TextBlock
+                {
+                    Text = mark,
+                    FontSize = 14,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = Solid(TemplateTheme.AccentText),
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsHitTestVisible = false
+                },
+                Background = rest,
+                BorderThickness = new Thickness(1),
+                BorderBrush = Solid(Color.FromArgb(0x88, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B)),
+                Cursor = Cursors.Hand,
+                Focusable = false,
+                Padding = new Thickness(0),
+                ToolTip = label,
+                Template = GetRoundTemplate(44),
+                Tag = entry
+            };
+            WireProcessKill(btn, entry, rest, hover, label);
+            return btn;
         }
+
+        double w = form is "fan" ? 150 : form is "burst" ? 128 : 118;
+        return CreateProcessKillTile(entry, w, 34);
+    }
+
+    private void WireProcessKill(Button btn, ProcessEntry entry, Brush rest, Brush hover, string label)
+    {
+        var pids = entry.AllPids is { Count: > 0 } ? entry.AllPids : new[] { entry.Pid };
+        _restFills[btn] = rest;
+        _hoverFills[btn] = hover;
+        btn.Click += (_, _) =>
+        {
+            btn.IsEnabled = false;
+            HintTitle.Text = entry.Name;
+            HintBody.Text = "Завершаю…";
+            HintCard.Visibility = Visibility.Visible;
+            HintCard.Opacity = 1;
+            PlaceHintCard();
+            int[] ids = pids.ToArray();
+            Task.Run(() => ProcessKillService.TryKillMany(ids)).ContinueWith(t =>
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    string err = t.Status == TaskStatus.RanToCompletion ? t.Result : "Не удалось завершить.";
+                    if (err.Length > 0)
+                    {
+                        btn.IsEnabled = true;
+                        HintBody.Text = err;
+                        PlaceHintCard();
+                        return;
+                    }
+
+                    btn.Visibility = Visibility.Collapsed;
+                    _flyout.Remove(btn);
+                    HintBody.Text = ids.Length > 1 ? $"Завершены все ({ids.Length})." : "Завершён.";
+                    PlaceHintCard();
+                });
+            });
+        };
+        btn.MouseEnter += (_, _) =>
+        {
+            btn.Background = hover;
+            HintTitle.Text = label;
+            HintBody.Text = "Завершить процесс.";
+            HintCard.Visibility = Visibility.Visible;
+            HintCard.Opacity = 1;
+            PlaceHintCard();
+            CancelHideFlyout();
+        };
+        btn.MouseLeave += (_, _) =>
+        {
+            btn.Background = rest;
+            ScheduleHideFlyout();
+        };
+    }
+
+    private double DiscKeepOut()
+    {
+        double byOrbit = _orbitRadius + _slotSize * 0.55 + 12;
+        return Math.Max(Math.Max(_discClearR, 200), byOrbit);
     }
 
     private void FlyoutKeepAliveEnter(object sender, System.Windows.Input.MouseEventArgs e) => CancelHideFlyout();
@@ -1448,7 +1758,7 @@ public partial class RadialMenuWindow: Window
             Text = label,
             FontSize = 12.5,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.Fg),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             IsHitTestVisible = false
         });
@@ -1497,13 +1807,13 @@ public partial class RadialMenuWindow: Window
             Text = label,
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.Fg),
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             IsHitTestVisible = false
         };
 
-        var rest = Solid(Color.FromArgb(0x28, 0xF5, 0xF0, 0xE8));
+        var rest = Solid(Color.FromArgb(0x28, TemplateTheme.Fg.R, TemplateTheme.Fg.G, TemplateTheme.Fg.B));
         var hover = Solid(Color.FromArgb(0x66, 0xA0, 0x4A, 0x4A));
         var btn = new Button
         {
@@ -1583,7 +1893,7 @@ public partial class RadialMenuWindow: Window
             Text = string.IsNullOrWhiteSpace(action.Label) ? Path.GetFileName(action.Value) : action.Label,
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.Fg),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -1597,8 +1907,8 @@ public partial class RadialMenuWindow: Window
         row.Children.Add(iconHost);
         row.Children.Add(label);
 
-        var rest = Solid(Color.FromArgb(0x28, 0xF5, 0xF0, 0xE8));
-        var hover = Solid(Color.FromArgb(0x55, 0xF5, 0xF0, 0xE8));
+        var rest = Solid(Color.FromArgb(0x28, TemplateTheme.Fg.R, TemplateTheme.Fg.G, TemplateTheme.Fg.B));
+        var hover = Solid(Color.FromArgb(0x55, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B));
 
         var btn = new Button
         {
@@ -1633,31 +1943,6 @@ public partial class RadialMenuWindow: Window
         {
             ApplyFill(btn, hover: true);
             CancelHideFlyout();
-            if (!action.ValueIsDirectory)
-            {
-                if (!_peekSticky)
-                    ClearPeek();
-                return;
-            }
-
-            string full = Path.GetFullPath(action.Value);
-            // Уже смотрим эту папку: ничего не трогаем (можно спокойно ехать в превью).
-            if (_peekPanel != null
-                && string.Equals(_peekPath, full, StringComparison.OrdinalIgnoreCase))
-            {
-                CancelPendingPeekSwitch();
-                return;
-            }
-
-            // Превью уже открыто на другую папку: не перебивать при проезде к панели.
-            // Сменить можно только если зависнуть на новой ~2.5с.
-            if (_peekSticky && _peekPanel != null)
-            {
-                ScheduleFolderPeek(full, resetStack: true, delayMs: 2500);
-                return;
-            }
-
-            ScheduleFolderPeek(full, resetStack: true, delayMs: 120);
         };
         btn.MouseLeave += (_, _) =>
         {
@@ -1765,9 +2050,6 @@ public partial class RadialMenuWindow: Window
         ClearPeek(keepStack: true);
         _peekPath = full;
         _peekSticky = true;
-        // Превью открыто: список папок сжимаем в узкую колонку, чтобы оба влезли у круга.
-        if (_foldersGroupAction != null)
-            SetFoldersCompactMode(true);
         int loadGen = _peekLoadGen;
 
         const double pad = 10;
@@ -1790,7 +2072,7 @@ public partial class RadialMenuWindow: Window
             {
                 Text = "Пусто",
                 FontSize = 13,
-                Foreground = Solid(Color.FromArgb(0x99, 0xF5, 0xF0, 0xE8)),
+                Foreground = Solid(TemplateTheme.AccentText),
                 Margin = new Thickness(8),
                 IsHitTestVisible = false
             });
@@ -1823,7 +2105,7 @@ public partial class RadialMenuWindow: Window
                 Height = 28,
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+                Foreground = Solid(TemplateTheme.Fg),
                 Background = Solid(Color.FromArgb(0x40, 0x3E, 0x5E, 0x4A)),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
@@ -1853,7 +2135,7 @@ public partial class RadialMenuWindow: Window
             Text = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromArgb(0x99, 0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.AccentText),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             IsHitTestVisible = false
@@ -1869,8 +2151,8 @@ public partial class RadialMenuWindow: Window
             Padding = new Thickness(pad),
             CornerRadius = new CornerRadius(14),
             BorderThickness = new Thickness(1),
-            BorderBrush = Solid(Color.FromArgb(0x40, 0xF5, 0xF0, 0xE8)),
-            Background = Solid(Color.FromArgb(0xF0, 0x16, 0x16, 0x18)),
+            BorderBrush = Solid(TemplateTheme.Border),
+            Background = Solid(Color.FromArgb(0xF2, TemplateTheme.BgPanel.R, TemplateTheme.BgPanel.G, TemplateTheme.BgPanel.B)),
             Child = root,
             SnapsToDevicePixels = true,
             Opacity = 1
@@ -1886,7 +2168,7 @@ public partial class RadialMenuWindow: Window
         RingCanvas.Children.Add(_peekPanel);
         _flyout.Add(_peekPanel);
         Panel.SetZIndex(_peekPanel, 55);
-        LayoutFolderCluster();
+        LayoutPeekBesideCluster();
     }
 
     private Button CreatePeekTile(FolderPeekEntry entry, double width, double height, int loadGen)
@@ -1909,7 +2191,7 @@ public partial class RadialMenuWindow: Window
             Height = thumb,
             Child = glyph,
             CornerRadius = new CornerRadius(8),
-            Background = Solid(Color.FromArgb(0x22, 0xF5, 0xF0, 0xE8)),
+            Background = Solid(Color.FromArgb(0x22, TemplateTheme.Fg.R, TemplateTheme.Fg.G, TemplateTheme.Fg.B)),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             Margin = new Thickness(0, 0, 0, 4),
             ClipToBounds = true
@@ -1926,7 +2208,7 @@ public partial class RadialMenuWindow: Window
             Text = entry.Name,
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.Fg),
             TextAlignment = System.Windows.TextAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -1934,8 +2216,8 @@ public partial class RadialMenuWindow: Window
             IsHitTestVisible = false
         });
 
-        var rest = Solid(Color.FromArgb(0x22, 0xF5, 0xF0, 0xE8));
-        var hover = Solid(Color.FromArgb(0x55, 0xF5, 0xF0, 0xE8));
+        var rest = Solid(Color.FromArgb(0x22, TemplateTheme.Fg.R, TemplateTheme.Fg.G, TemplateTheme.Fg.B));
+        var hover = Solid(Color.FromArgb(0x55, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B));
         var btn = new Button
         {
             Width = width,
@@ -2048,6 +2330,31 @@ public partial class RadialMenuWindow: Window
         try
         {
             Point pos = Mouse.GetPosition(RingCanvas);
+            if (!_clusterRect.IsEmpty)
+            {
+                var zone = _clusterRect;
+                zone.Inflate(16, 16);
+                if (zone.Contains(pos))
+                    return true;
+            }
+
+            if (_flyoutParent != null && !_formCluster.IsEmpty)
+            {
+                double bx = Canvas.GetLeft(_flyoutParent);
+                double by = Canvas.GetTop(_flyoutParent);
+                double bw = _flyoutParent.ActualWidth > 1 ? _flyoutParent.ActualWidth : _flyoutParent.Width;
+                double bh = _flyoutParent.ActualHeight > 1 ? _flyoutParent.ActualHeight : _flyoutParent.Height;
+                if (!double.IsNaN(bx) && !double.IsNaN(by))
+                {
+                    var bridge = Rect.Union(new Rect(bx, by, Math.Max(bw, 1), Math.Max(bh, 1)), _formCluster);
+                    if (_peekPanel != null)
+                        bridge = Rect.Union(bridge, PanelRect(_peekPanel));
+                    bridge.Inflate(14, 14);
+                    if (bridge.Contains(pos))
+                        return true;
+                }
+            }
+
             // Мост от кнопки кольца до выезда: курсор в щели не снимает панель.
             if (_flyoutPanel != null && _flyoutParent != null)
             {
@@ -2082,6 +2389,8 @@ public partial class RadialMenuWindow: Window
     {
         double x = Canvas.GetLeft(el);
         double y = Canvas.GetTop(el);
+        if (double.IsNaN(x)) x = 0;
+        if (double.IsNaN(y)) y = 0;
         double w = el.ActualWidth > 1 ? el.ActualWidth : el.Width;
         double h = el.ActualHeight > 1 ? el.ActualHeight : Math.Max(el.DesiredSize.Height, el.Height);
         if (double.IsNaN(w) || w <= 0) w = 1;
@@ -2118,7 +2427,7 @@ public partial class RadialMenuWindow: Window
             Text = string.IsNullOrWhiteSpace(action.Label) ? action.Value: action.Label,
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
-            Foreground = Solid(Color.FromRgb(0xF5, 0xF0, 0xE8)),
+            Foreground = Solid(TemplateTheme.Fg),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -2138,7 +2447,7 @@ public partial class RadialMenuWindow: Window
         row.Children.Add(label);
 
         var rest = Solid(Color.FromArgb(0x00, 0, 0, 0));
-        var hover = Solid(Color.FromArgb(0x55, 0xF5, 0xF0, 0xE8));
+        var hover = Solid(Color.FromArgb(0x55, TemplateTheme.AccentText.R, TemplateTheme.AccentText.G, TemplateTheme.AccentText.B));
 
         var btn = new Button
         {
@@ -2214,9 +2523,8 @@ public partial class RadialMenuWindow: Window
     {
         _hideFlyoutTimer ??= new System.Windows.Threading.DispatcherTimer();
         // Пульт с ползунками: дольше держим, иначе щель до панели убивает выезд.
-        bool desk = _flyoutPanel?.Tag as string == "desk";
-        _hideFlyoutTimer.Interval = TimeSpan.FromMilliseconds(
-            desk ? 700 : _peekPanel != null ? 380 : 220);
+        bool desk = _flyoutIsDesk;
+        _hideFlyoutTimer.Interval = TimeSpan.FromMilliseconds(desk ? 700 : 640);
         _hideFlyoutTimer.Stop();
         _hideFlyoutTimer.Tick -= HideFlyoutTick;
         _hideFlyoutTimer.Tick += HideFlyoutTick;
@@ -2228,9 +2536,50 @@ public partial class RadialMenuWindow: Window
     private void HideFlyoutTick(object? sender, EventArgs e)
     {
         _hideFlyoutTimer?.Stop();
-        if (IsMouseInFlyoutCluster())
+        if (IsMouseInFlyoutCluster() || PointerInFlyoutCorridor())
+        {
+            ScheduleHideFlyout();
             return;
+        }
         ClearFlyout();
+    }
+
+    /// <summary>Полоса от кнопки круга до панели. Пока курсор в ней, выезд не снимаем.</summary>
+    private bool PointerInFlyoutCorridor()
+    {
+        if (_flyoutPanel == null)
+            return false;
+        try
+        {
+            Point pos = Mouse.GetPosition(RingCanvas);
+            Rect zone = Rect.Empty;
+            if (_flyoutParent != null)
+            {
+                double x = Canvas.GetLeft(_flyoutParent);
+                double y = Canvas.GetTop(_flyoutParent);
+                double w = _flyoutParent.ActualWidth > 1 ? _flyoutParent.ActualWidth : _flyoutParent.Width;
+                double h = _flyoutParent.ActualHeight > 1 ? _flyoutParent.ActualHeight : _flyoutParent.Height;
+                if (!double.IsNaN(x) && !double.IsNaN(y))
+                    zone = new Rect(x, y, Math.Max(w, 1), Math.Max(h, 1));
+            }
+
+            if (!_formCluster.IsEmpty)
+                zone = zone.IsEmpty ? _formCluster : Rect.Union(zone, _formCluster);
+            if (_peekPanel != null)
+            {
+                var peek = PanelRect(_peekPanel);
+                zone = zone.IsEmpty ? peek : Rect.Union(zone, peek);
+            }
+
+            if (zone.IsEmpty)
+                return false;
+            zone.Inflate(90, 90);
+            return zone.Contains(pos);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void ClearFlyout() => DetachFlyout(destroyDynamic: true);
@@ -2244,6 +2593,8 @@ public partial class RadialMenuWindow: Window
         _foldersCompact = false;
         _foldersGroupAction = null;
         _clusterRect = Rect.Empty;
+        _formCluster = Rect.Empty;
+        _flyoutIsDesk = false;
         ClearPeek();
         bool keep = _flyoutPanel != null && _keptFlyouts.ContainsValue(_flyoutPanel);
         if (_flyoutPanel != null)
@@ -2323,16 +2674,17 @@ public partial class RadialMenuWindow: Window
             PlaceHintCard();
         }
 
-        var panel = DeskFlyout.Build(Tip, () => Dismissed?.Invoke(this, EventArgs.Empty));
-        panel.Tag = "desk";
-        panel.MouseEnter += FlyoutKeepAliveEnter;
-        panel.MouseLeave += FlyoutKeepAliveLeave;
-        _flyoutPanel = panel;
-        RingCanvas.Children.Add(panel);
-        _flyout.Add(panel);
-        panel.Measure(new System.Windows.Size(400, 720));
-        double wantH = Math.Max(panel.DesiredSize.Height, 280);
-        AttachFlyout(parent, panel, 360, wantH);
+        _flyoutIsDesk = true;
+        var content = DeskFlyout.Build(Tip, () => Dismissed?.Invoke(this, EventArgs.Empty));
+        content.Measure(new System.Windows.Size(400, 720));
+        double wantH = Math.Min(Math.Max(content.DesiredSize.Height, 280), Math.Max(240, RingCanvas.Height - 80));
+        // Пульт всегда стык: ползунки не садятся в ореол/веер.
+        EnsureSpaceForForm("dock", 40);
+        var mount = FlyoutForms.BuildDense(
+            "dock", _ringCx, _ringCy, FlyoutKeepOut(),
+            "Пульт", content, 340, wantH,
+            RingCanvas.Width, RingCanvas.Height);
+        ApplyMount(mount);
     }
 
     void ArmHint(MenuAction action)

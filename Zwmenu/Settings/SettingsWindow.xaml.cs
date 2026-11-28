@@ -6,6 +6,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using Zwmenu.Models;
+using Zwmenu.Overlay;
 using Zwmenu.Services;
 
 namespace Zwmenu.Settings;
@@ -30,6 +31,10 @@ public partial class SettingsWindow: Window
         _suspend = true;
         InitializeComponent();
         AppChrome.ApplyWindowIcon(this);
+        RootGrid.Background = ForgeChrome.PanelWash();
+        var mark = ForgeChrome.Mark();
+        if (mark != null)
+            MarkHost.Child = new System.Windows.Controls.Image { Source = mark, Stretch = Stretch.UniformToFill };
         _itemView = CollectionViewSource.GetDefaultView(_items);
         _itemView.Filter = ItemVisible;
         ItemList.ItemsSource = _itemView;
@@ -40,6 +45,8 @@ public partial class SettingsWindow: Window
         FillMiddleClickModeCombo();
         FillDictation();
         InitRingLooks();
+        InitUiSkins();
+        InitFlyoutLooks();
         FillScreenshot();
         FillTranslateHotkey();
         FillShelf();
@@ -126,8 +133,14 @@ public partial class SettingsWindow: Window
     private static void PaintNav(Button button, bool on)
     {
         button.Background = new SolidColorBrush(on
-            ? Color.FromRgb(0x3E, 0x5A, 0x6E)
-            : Color.FromRgb(0x2A, 0x2A, 0x2E));
+            ? Color.FromRgb(0x1E, 0x3A, 0x36)
+            : Colors.Transparent);
+        button.Foreground = new SolidColorBrush(on
+            ? Color.FromRgb(0x6E, 0xE0, 0xC4)
+            : Color.FromRgb(0xEC, 0xEF, 0xF3));
+        button.BorderBrush = new SolidColorBrush(on
+            ? Color.FromArgb(0x66, 0x6E, 0xE0, 0xC4)
+            : Colors.Transparent);
         button.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
     }
 
